@@ -203,3 +203,16 @@ find . -type f -exec sed -i 's/oldword/newword/g' {} +
 ```bash
 find . -type f -name "*.txt" -exec sed -i 's/oldword/newword/g' {} +
 ```
+
+### print time of video
+```bash
+for file in "Session 06 Bash Scripting Essentials.mkv" \
+            "Session 07 Linux File System Essentials.mkv" \
+            "Session 08 Linux File System Operations – File Management, Linking, and Mounting.mkv" \
+            "Session 09 Process Management in Linux – Building A Minimal Linux Distro from Scratch.mkv" \
+            "Session 10 Introduction to Networking and Application Layer.mkv"; do
+  echo -n "$file: "
+  ffprobe -v quiet -show_entries format=duration -of csv="p=0" "$file" | \
+  awk '{printf "%02d:%02d:%02d\n",$1/3600,($1%3600)/60,$1%60}'
+done
+```

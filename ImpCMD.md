@@ -26,6 +26,9 @@ sudo apt install linux-generic-hwe-24.04
 yt-dlp -f 137+140 "Playlist Link"
 # OR
 yt-dlp -f "bv*+ba/b" -o "%(title)s.%(ext)s" "Playlist Link"
+
+# and To update it
+sudo yt-dlp -U
 ```
 
 ---

@@ -109,9 +109,3 @@ ln -sfn ~/dotfiles-ubuntu/nvim/nvim ~/.config/nvim
 - Tested on **Ubuntu 22.04+**  
 - Requires internet connection for installing plugins & dependencies  
 - Feel free to fork/modify to fit your own workflow  
-
----
-
-## 📜 License
-
-This repository is licensed under the [MIT License](LICENSE.md).

@@ -230,3 +230,62 @@ sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 ```
+
+### How to Enable and Configure zram
+
+This guide explains how to install and set up `zram` on a Linux system (like Ubuntu or Debian) to improve performance by compressing a part of RAM and using it as swap.
+
+### 1. Install and Run zram-tools
+
+First, install the required package, then start the service and enable it to run on boot.
+
+```bash
+sudo apt install zram-tools
+sudo systemctl enable --now zramswap.service
+```
+
+### 2. Configure zramswap Settings
+
+Next, modify the configuration file to specify the algorithm and memory percentage.
+
+Open the file (using `nvim` or your preferred text editor):
+
+```bash
+sudo nvim /etc/default/zramswap
+```
+
+Set the configuration as follows (this example uses `zstd` for compression and 75% of memory):
+
+```bash
+# Compression algorithm selection
+# speed: lz4 > zstd > lzo
+# compression: zstd > lzo > lz4
+# This is not inclusive of all that is available in latest kernels
+# See /sys/block/zram0/comp_algorithm (when zram module is loaded) to see
+# what is currently set and available for your kernel[1]
+# [1]  [https://github.com/torvalds/linux/blob/master/Documentation/blockdev/zram.txt#L86](https://github.com/torvalds/linux/blob/master/Documentation/blockdev/zram.txt#L86)
+ALGO=zstd
+
+# Specifies the amount of RAM that should be used for zram
+# based on a percentage the total amount of available memory
+# This takes precedence and overrides SIZE below
+PERCENT=75
+
+# Specifies a static amount of RAM that should be used for
+# the ZRAM devices, this is in MiB
+#SIZE=256
+
+# Specifies the priority for the swap devices, see swapon(2)
+# for more details. Higher number = higher priority
+# This should probably be higher than hdd/ssd swaps.
+PRIORITY=100
+```
+
+### 3. Restart the Service and Verify
+
+Finally, restart the service to apply the new changes, then check that the swap is active.
+
+```bash
+sudo systemctl restart zramswap.service
+swapon --show
+```

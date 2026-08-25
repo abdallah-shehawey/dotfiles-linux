@@ -10,8 +10,7 @@
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-tab: 120px;     /* width an open tab never goes below while there is room */
-  --ctab-tab-max: 200px; /* ...and how far it stretches to fill an empty row */
+  --ctab-tab: 120px;     /* width of an open tab that is not the current one */
   --ctab-chip: 38px;     /* width of a PINNED tab / an essential: favicon only */
   --ctab-active: 220px;  /* width of the current tab */
   --ctab-peek: var(--ctab-tab);  /* a pinned chip while the pointer is on it */
@@ -552,17 +551,16 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    of pushing the last tabs out of the window - that squeeze IS the fallback
    the favicon chip used to be.
 
-   flex-GROW is 1 for the same reason in the other direction: --ctab-tab is a
-   floor, not a fixed size, so a half-empty row is shared out between the tabs
-   that are in it instead of stopping short and leaving the rest of the strip
-   blank (measured at 2560px: 14 tabs stopped at 2200 and left 168px empty).
-   --ctab-tab-max is what stops three tabs from becoming three banners; the
-   selected pill is 220 and stays out of the sharing, being flex 0 0. */
+   flex-GROW stays 0, and that is a decision, not an oversight: letting the
+   tabs share out an empty row (flex: 1 1) was built and measured - 14 tabs
+   went 120 -> 128 and the row ran to its end - and the owner asked for the
+   fixed width back the same day. A tab is 120px wherever it is in the row;
+   what the row has spare stays spare. */
 .tabbrowser-tab[fadein] {
-  flex: 1 1 var(--ctab-tab) !important;
+  flex: 0 1 var(--ctab-tab) !important;
   width: var(--ctab-tab) !important;
   min-width: 24px !important;
-  max-width: var(--ctab-tab-max) !important;
+  max-width: var(--ctab-tab) !important;
 }
 /* a pinned tab and an essential stay icons - that is what pinning one is for,
    and the strip cap further up counts them at 40px each */

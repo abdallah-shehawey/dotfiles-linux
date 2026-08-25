@@ -50,8 +50,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-tab: 120px;     /* the width a tab never goes below while there is room */
-  --ctab-tab-max: 200px; /* ...and how far it stretches into an empty row */
+  --ctab-tab: 120px;     /* width of a tab that is not the current one */
   --ctab-chip: 38px;     /* width of a PINNED tab: favicon only */
   --ctab-peek: var(--ctab-tab);   /* a pinned chip while the pointer is on it */
   --ctab-active: 220px;  /* width of the current tab */

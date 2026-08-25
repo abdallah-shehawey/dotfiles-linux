@@ -50,7 +50,8 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-tab: 120px;     /* width of a tab that is not the current one */
+  --ctab-tab: 120px;     /* the width a tab never goes below while there is room */
+  --ctab-tab-max: 200px; /* ...and how far it stretches into an empty row */
   --ctab-chip: 38px;     /* width of a PINNED tab: favicon only */
   --ctab-peek: var(--ctab-tab);   /* a pinned chip while the pointer is on it */
   --ctab-active: 220px;  /* width of the current tab */
@@ -59,6 +60,8 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
+  --ctab-left: 128px;    /* back / forward / reload / home + their separator */
+  --ctab-foot: 34px;     /* the downloads button at the far end of the row */
   --ctab-gap: 8px;       /* room on each side of the address box */
   --ctab-private: 128, 116, 255;  /* the private-window accent, as R, G, B */
 
@@ -95,6 +98,7 @@ Edit, save, restart Zen.
 | `zen.tabs.show-newtab-vertical=true` | reveals the "+" after the last tab - Zen ships it `display:none` |
 | `zen.view.compact.enable-at-startup=false` | compact mode stays off (see below) |
 | `toolkit.cosmeticAnimations.enabled=true` | tabs slide open and closed |
+| `zen.ctrlTab.show-pending-tabs=true` | a tab that has not loaded yet still counts in the Ctrl+Tab switcher |
 
 **The trade-off:** Zen ties the floating Ctrl+T box and the startup screen to
 the *same* pref (`ZenSpaceManager.selectStartPage`). With

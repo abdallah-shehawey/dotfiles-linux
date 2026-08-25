@@ -32,6 +32,14 @@ user_pref("toolkit.cosmeticAnimations.enabled", true);
 // in that state after a restart.
 user_pref("zen.view.compact.enable-at-startup", false);
 
+// Firefox's Ctrl+Tab switcher shows at most SEVEN cards (maxTabPreviews is a
+// constant in browser-ctrlTab.js, there is no pref for it), and Zen filters
+// out every tab that has not been loaded yet - a restored or auto-unloaded tab
+// carries [pending], and ctrlTab.tabList drops it. That is why the panel can
+// come up with a handful of tabs while twenty are open. This puts them back in
+// the list; the price is that such a card has no thumbnail yet.
+user_pref("zen.ctrlTab.show-pending-tabs", true);
+
 // Zen hides the "+" after the last tab unless this is on: vertical-tabs.css
 // wraps #tabs-newtab-button in @media -moz-pref("zen.tabs.show-newtab-vertical")
 // and ships it display:none otherwise.

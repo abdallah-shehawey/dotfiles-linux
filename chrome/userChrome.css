@@ -10,14 +10,29 @@
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-tab: 120px;     /* width of an open tab that is not the current one */
+  --ctab-tab: 120px;     /* width an open tab never goes below while there is room */
+  --ctab-tab-max: 200px; /* ...and how far it stretches to fill an empty row */
   --ctab-chip: 38px;     /* width of a PINNED tab / an essential: favicon only */
   --ctab-active: 220px;  /* width of the current tab */
   --ctab-peek: var(--ctab-tab);  /* a pinned chip while the pointer is on it */
   --ctab-label: 12px;    /* the title on a tab that is not the current one */
   --ctab-tab-h: 26px;    /* height of a tab */
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
+  --ctab-left: 128px;    /* back / forward / reload / home + their separator */
+  --ctab-foot: 34px;     /* the downloads button, at the far end of the row */
   --ctab-url: 280px;     /* width of the address box */
+  /* Everything in the row that is NOT tabs. The tab strip cannot be sized in
+     percentages (see the cap on .zen-workspace-normal-tabs-section), so it is
+     measured out of 100vw with this, and every px of it that is wrong is a px
+     of empty row. Measured at 2560px wide, this exact button set:
+       4  #navigator-toolbox padding
+     128  #zen-sidebar-top-buttons  (4 buttons x 30 + the 8px separator)
+       2  #nav-bar margin + 280 address box + 2 margin
+       4  gap before #zen-tabs-wrapper            -> the strip starts at 420
+      34  #zen-sidebar-foot-buttons (downloads) + its gap
+     158  --ctab-right                            -> the strip ends at 2368  */
+  --ctab-reserve: calc(var(--ctab-left) + var(--ctab-url) + var(--ctab-foot) +
+                       var(--ctab-right) + 12px);
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
   --ctab-gap: 8px;       /* breathing room on each side of the address box */
   --ctab-bm: 32px;       /* the bookmarks strip, on the pages that show it */
@@ -416,7 +431,7 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   --ctab-sel: 190px;
 }
 .zen-workspace-normal-tabs-section {
-  max-width: max(180px, calc(100vw - 760px - var(--ctab-newtab) - var(--ctab-ess) - var(--ctab-pins) - var(--ctab-sel))) !important;
+  max-width: max(180px, calc(100vw - var(--ctab-reserve) - var(--ctab-newtab) - var(--ctab-ess) - var(--ctab-pins) - var(--ctab-sel))) !important;
   /* past ~40 tabs even the narrowest chips no longer fit: scroll, still
      without a bar */
   overflow-x: auto !important;
@@ -535,12 +550,19 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    only readable one tab at a time, under the pointer. flex-shrink stays at 1,
    so a full strip still squeezes these down towards the 24px minimum instead
    of pushing the last tabs out of the window - that squeeze IS the fallback
-   the favicon chip used to be. */
+   the favicon chip used to be.
+
+   flex-GROW is 1 for the same reason in the other direction: --ctab-tab is a
+   floor, not a fixed size, so a half-empty row is shared out between the tabs
+   that are in it instead of stopping short and leaving the rest of the strip
+   blank (measured at 2560px: 14 tabs stopped at 2200 and left 168px empty).
+   --ctab-tab-max is what stops three tabs from becoming three banners; the
+   selected pill is 220 and stays out of the sharing, being flex 0 0. */
 .tabbrowser-tab[fadein] {
-  flex: 0 1 var(--ctab-tab) !important;
+  flex: 1 1 var(--ctab-tab) !important;
   width: var(--ctab-tab) !important;
   min-width: 24px !important;
-  max-width: var(--ctab-tab) !important;
+  max-width: var(--ctab-tab-max) !important;
 }
 /* a pinned tab and an essential stay icons - that is what pinning one is for,
    and the strip cap further up counts them at 40px each */

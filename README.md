@@ -388,7 +388,7 @@ any update, if something looks off, compare with `chrome/userChrome.css` here.
 
 ### What 1.23b changed (2026-10-03)
 
-Three things, all of them the same shape: Zen added a box that assumes the
+Four things, all of them the same shape: Zen added a box that assumes the
 toolbar is the **left edge** of the window, and here it is the **top**.
 
 | what | what it did | the rule |
@@ -396,6 +396,7 @@ toolbar is the **left edge** of the window, and here it is the **top**.
 | a new `#zen-sidebar-top-buttons-customization-target` wrapping the left buttons, both boxes carrying XUL `flex="1"` | the cluster resolved to **2.07px**, so CustomizableUI's overflow check ran `2 - 28` against 128px of buttons and swallowed **reload, home and the sidebar toggle** into a `>>` menu | `min-width: max-content` on both; the box asks for the 128px it holds, the `>>` goes away |
 | the **Library** (`zen.library.enabled`), which replaced the downloads button with `#zen-library-button` | its panel is `top: 0` against `#browser`, so it opened **over** the whole row - tabs, address box and back/forward all unclickable - and cloned the window buttons into its own corner | `top: var(--ctab-lib-top)` (42px, where the content area starts) and the clone hidden |
 | that button's download stack, `#zen-library-download-list`, `bottom: 100%` | all four cards sat **above** the top of the window, the newest poking 5px back onto the tab strip | turned over to `top: 100%` + `column-reverse`, so it hangs below the row |
+| opening the Library writes an inline `transform: translateX(...)` on `#zen-appcontent-wrapper` - a push, so the page slides clear of the panel | the distance is wrong here: **`translateX(-1984px)`** at 2560 wide, which shoves 1984px of the page off the left and leaves its rightmost 576px painted under the panel. That is the "everything falls apart" screenshot | held still while the panel is open (`zen-library[open] ~ #zen-appcontent-wrapper`), and the panel - which has **no background of its own**, it was always drawn against the pushed-away backdrop - given `--zen-main-browser-background` and an edge shadow |
 
 The `zen-sidebar-expanded="true"` trap is the one to remember - the root
 carries it permanently with horizontal tabs, so every Zen rule written as

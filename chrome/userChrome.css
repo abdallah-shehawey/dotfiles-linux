@@ -1036,6 +1036,64 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   top: var(--ctab-lib-top) !important;
 }
 
+/* ...and opening it must not drag the page out of the window. Zen writes an
+   inline `transform: translateX(...)` onto #zen-appcontent-wrapper while the
+   panel is open - a push, so that beside a vertical sidebar the page slides
+   clear of the panel instead of hiding under it. The distance it picks is
+   wrong here. Measured at 2560x1440 on a 10x10 grid page, opening the
+   Library:
+
+     #zen-appcontent-wrapper   style="transform: translateX(-1984px)"
+                               x=-1984  w=2560   -> right edge at 576
+
+   so 1984px of the page is pushed off the left of the window and what is
+   left on screen is its rightmost 576px, painted underneath the panel. On a
+   real page that reads as the layout coming apart: the grid's last two
+   columns, or GitHub's "New pull request" button and its comment counts,
+   sitting on top of the History list with the rest of the window blank.
+
+   None of that is this file's doing - a control run with the rule above
+   removed gives the same -1984px - but a 36px row has no sideways room to
+   give a panel in the first place, so there is nothing to push. Held still,
+   the Library is simply an overlay over the left 418px of the page, which
+   is what a panel anchored to a button in the top row should be.
+
+   Scoped to the sibling so it only fires while the panel is open: the same
+   inline transform carries Zen's workspace swipe, and a blanket
+   `transform: none` would freeze that. #browser's children are, in order,
+   ... #navigator-toolbox, zen-library, ..., #zen-appcontent-wrapper. */
+zen-library[open] ~ #zen-appcontent-wrapper {
+  transform: none !important;
+}
+
+/* Holding the page still means the panel is now over live content, and it
+   has no background of its own to cover it with - measured, every box in it
+   is transparent:
+
+     zen-library           background rgba(0, 0, 0, 0)
+     #zen-library-panel    background rgba(0, 0, 0, 0)
+     #zen-library-side     only a linear-gradient of rgba(255,255,255,.08)
+     #zen-library-content  background rgba(0, 0, 0, 0)
+
+   It never needed one: the push moved the page out from behind it and what
+   showed through was #zen-browser-background. So give it that same colour,
+   --zen-main-browser-background, which is the variable that backdrop is
+   painted from and which already resolves per theme
+   (light-dark(rgb(235,235,235), #1b1b1b)) - the panel looks exactly as it
+   did, over a page instead of over an empty window. The shadow down the
+   right edge is what the page no longer being pushed costs: without it the
+   panel and the content it covers run together.
+
+   Not scoped to [open]: zen-library is visibility:hidden until then, which
+   hides a background too, and scoping it would drop the backdrop on the
+   first frame of the close animation and show the page through a panel
+   still on its way out. */
+zen-library {
+  background: var(--zen-main-browser-background,
+                  light-dark(rgb(235, 235, 235), #1b1b1b)) !important;
+  box-shadow: 6px 0 24px -6px rgba(0, 0, 0, 0.45) !important;
+}
+
 /* The panel clones the minimise / maximise / close buttons into its own top
    corner (.zen-library-window-buttons-clone). zen-library.css hides that
    clone with :root:not([zen-sidebar-expanded="true"]), and with horizontal

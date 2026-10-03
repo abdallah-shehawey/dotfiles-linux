@@ -173,6 +173,52 @@
 
 /* ---- left cluster: sidebar toggle, back / forward / reload / home ---- */
 #zen-sidebar-top-buttons { height: 28px !important; margin: 0 !important; padding: 0 !important; }
+
+/* ---- the cluster has to hold its own width, or every button leaves ----
+   Zen 1.23b wrapped these buttons in a new child,
+   #zen-sidebar-top-buttons-customization-target, and both it and the box
+   around it carry the XUL flex="1" attribute - flex: 1 1 0% with a
+   min-width of 1px. In this row #nav-bar is flex 0 0 280px and #titlebar
+   takes the rest, so there is no free space to grow into and a 0% basis
+   resolves to nothing: measured at 2560px wide, #zen-sidebar-top-buttons
+   came out 2.07px wide while its own target inside it measured 64 and
+   spilled out of it.
+
+   That width is not only cosmetic. CustomizableUI's overflow check
+   (OverflowableToolbar.#getOverflowInfo, CustomizableUI.sys.mjs) is
+
+     totalAvail = width(#zen-sidebar-top-buttons) - padding - width(the
+                  overflow button, which 1.23b now parks in this same box)
+     children   = sum of the buttons, minus the separator
+     overflowing = children > totalAvail
+
+   With a 2px box that is 2 - 28 = -26 against 128px of buttons, so the
+   check is true on every pass and the panel swallows the lot. Measured in
+   a window started on the 1.23b build:
+
+     #zen-sidebar-top-buttons   w=2     [overflowing]
+     #nav-bar-overflow-button   w=28    display:flex   <- the ">>"
+     widget-overflow-list       zen-toggle-compact-mode, stop-reload-button,
+                                home-button
+     #zen-tabs-wrapper          x=294   (the strip should start at 420)
+
+   max-content on both boxes is what the old build got for free when the
+   buttons were direct children: the box asks for exactly the buttons it
+   holds. It settles at 128px - the same number --ctab-left already
+   reserves for it - the overflow button goes display:none, the panel
+   empties, and the strip lands back on x=420 / 2368, the two numbers the
+   budget above is written around. 0 0 auto rather than a fixed width so a
+   button added or removed later still fits - but --ctab-left has to be
+   moved with it when that happens, because that is the copy of this number
+   --ctab-reserve caps the tab strip with, and only this box measures
+   itself. */
+#zen-sidebar-top-buttons,
+#zen-sidebar-top-buttons-customization-target {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: none !important;
+}
 #zen-toggle-compact-mode { order: 1 !important; }
 #back-button { order: 2 !important; }
 #forward-button { order: 3 !important; }
@@ -919,6 +965,115 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 /* downloads etc. at the end of the row */
 #zen-sidebar-foot-buttons { flex: 0 0 auto !important; width: auto !important; height: 28px !important; }
 #zen-create-new-button { display: none !important; }
+
+/* ---- the media controls never appear in this row ----
+   Zen puts #zen-media-controls-toolbar inside #TabsToolbar, and hides it
+   whenever the sidebar is collapsed (zen-media-controls.css ends on
+   `:root:not([zen-sidebar-expanded="true"]) { #zen-media-controls-toolbar {
+   display: none } }`). With horizontal tabs the root carries
+   zen-sidebar-expanded="true" permanently - checked in a live window - so
+   that rule never fires and the bar turns up in the row the moment a tab
+   starts playing.
+
+   It has nowhere to go. Zen gives it `flex-shrink: 1; min-width: 0`, which is
+   safe beside a 250px sidebar and is not safe here: the tab strip has already
+   claimed the row, so the bar is squeezed to nothing and the card inside it
+   spills out of the box it was squeezed into. Measured at 2560px wide, four
+   tabs, one of them playing:
+
+                                   playing        nothing playing
+     #zen-media-controls-toolbar   2395  w=0      -
+     .zen-media-card               2395  w=12     -
+     #zen-tabs-wrapper              390  w=2000    390  w=2005
+     #navigator-toolbox ends at    2402           2402
+
+   A 12px card, 5px of it PAST the end of the toolbox - and what is past that
+   end is --ctab-right, the strip held open for the app menu and the window
+   buttons, so the card lands on the minimise / maximise / close corner.
+   Hovering it does not help either: the stack grows UPWARD
+   (`flex-direction: column-reverse`, the cards overflowing above the box),
+   because above a sidebar bar is more sidebar - and above this one is the top
+   of the window. Forcing the hover state open moved nothing: with a 12px card
+   the title, the artist and the progress bar all measure zero.
+
+   Hidden, every box in the row measures identical to the "nothing playing"
+   column above, so the strip also stops flinching 5px narrower every time a
+   video starts. What is lost is the scrub bar and the track title; per-tab
+   volume still lives on the tab's own speaker icon. Deliberately NOT guarded
+   with :root:not([chromehidden~="toolbar"]) - a popup that starts playing
+   should not grow this bar either. */
+#zen-media-controls-toolbar { display: none !important; }
+
+/* ---- the Library opens below the row, not over it ----
+   New in Zen 1.23b (zen.library.enabled, zen-library.css): the downloads
+   button in #zen-sidebar-foot-buttons became #zen-library-button, and it
+   slides out a panel holding Media / Downloads / Boosts / Spaces / History.
+
+   zen-library is `position: absolute; top: 0; bottom: 0; left: 0` and its
+   containing block is #browser, which is the whole window - correct beside
+   a vertical sidebar, where the toolbar is the left edge and nothing of it
+   lives at the top. Here the toolbar IS the top, so the panel opens over
+   it. Measured at 2560x900 with the panel open:
+
+                            top       covers
+     zen-library            y=0       x=0..418, the full height
+     #navigator-toolbox     y=0..40   every tab, the address box, back/fwd
+     #zen-appcontent-wrapper  y=42    where the panel should have started
+
+   - the tab strip, the address box and the left cluster all sat underneath
+   it and could not be clicked while the Library was open.
+
+   42px is where the content area begins: 36px of --ctab-row, 5px of Zen's
+   own padding-bottom on the toolbox, 1px of rounding. Kept as its own
+   variable because it is a measured offset, not a size anything else
+   shares. The toolbox is `flex-wrap: wrap` and grows a second line for the
+   bookmarks strip on the new-tab page; the panel does not follow it there
+   and will cover that strip, which is the one state this trades away. */
+:root {
+  --ctab-lib-top: calc(var(--ctab-row) + 6px);
+}
+:root:not([chromehidden~="toolbar"]) zen-library {
+  top: var(--ctab-lib-top) !important;
+}
+
+/* The panel clones the minimise / maximise / close buttons into its own top
+   corner (.zen-library-window-buttons-clone). zen-library.css hides that
+   clone with :root:not([zen-sidebar-expanded="true"]), and with horizontal
+   tabs the root carries zen-sidebar-expanded="true" permanently - the same
+   trap as #zen-media-controls-toolbar above - so the clone turns up on top
+   of the panel while the real window buttons are still in the corner where
+   this file fixed them. Two sets of window buttons, 418px apart. */
+.zen-library-window-buttons-clone { display: none !important; }
+
+/* The Library button also carries the download stack that replaced the old
+   downloads button: #zen-library-download-list, `position: absolute;
+   bottom: 100%`, the cards hidden until #zen-sidebar-foot-buttons takes
+   [zen-library-stack-open]. Stacking upward is right under a vertical
+   sidebar - above the button is more sidebar - and wrong here, where above
+   the button is the top of the window. Forced open and measured at
+   2560x1440, the button sitting at y=5..33:
+
+     #zen-library-download-list   y=-225..5    (top: -230px)
+       card 0   y=-215..-163
+       card 1   y=-159..-107
+       card 2   y=-103..-51
+       card 3   y=-47..5
+
+   all four off the top of the window, the newest one poking 5px back into
+   the row on top of the tab strip. Turned over to hang below the button
+   instead: top:100% puts the list at the row's lower edge, column-reverse
+   keeps the newest card nearest the button the way it was, and the
+   entrance that slid the cards up by 25px drops them in by 25px so the
+   motion still comes from the button. */
+#zen-library-download-list {
+  top: 100% !important;
+  bottom: auto !important;
+  flex-direction: column-reverse !important;
+  padding-top: 10px !important;
+}
+.zen-library-download-list-download {
+  transform: translateY(calc((1 - var(--zen-library-progress)) * -25px)) !important;
+}
 
 /* ---- window buttons stay top-right ---- */
 :root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-wrapper {

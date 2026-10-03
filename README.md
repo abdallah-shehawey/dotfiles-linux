@@ -1,7 +1,7 @@
 # Zen horizontal tabs
 
 Zen Browser with the tabs on the **same row as the address bar** instead of the
-vertical sidebar. Tested on Zen 1.21.15b (Linux).
+vertical sidebar. Tested on Zen 1.21.15b and 1.23b (Linux).
 
 ![row](docs/row.png)
 
@@ -385,3 +385,24 @@ replace the application in `/opt/zen`, not the profile. What an update *can*
 do is rename an internal element or class, and then a piece of the layout stops
 matching - that is a CSS tweak, not a reinstall. This repo is the backup: after
 any update, if something looks off, compare with `chrome/userChrome.css` here.
+
+### What 1.23b changed (2026-10-03)
+
+Three things, all of them the same shape: Zen added a box that assumes the
+toolbar is the **left edge** of the window, and here it is the **top**.
+
+| what | what it did | the rule |
+|---|---|---|
+| a new `#zen-sidebar-top-buttons-customization-target` wrapping the left buttons, both boxes carrying XUL `flex="1"` | the cluster resolved to **2.07px**, so CustomizableUI's overflow check ran `2 - 28` against 128px of buttons and swallowed **reload, home and the sidebar toggle** into a `>>` menu | `min-width: max-content` on both; the box asks for the 128px it holds, the `>>` goes away |
+| the **Library** (`zen.library.enabled`), which replaced the downloads button with `#zen-library-button` | its panel is `top: 0` against `#browser`, so it opened **over** the whole row - tabs, address box and back/forward all unclickable - and cloned the window buttons into its own corner | `top: var(--ctab-lib-top)` (42px, where the content area starts) and the clone hidden |
+| that button's download stack, `#zen-library-download-list`, `bottom: 100%` | all four cards sat **above** the top of the window, the newest poking 5px back onto the tab strip | turned over to `top: 100%` + `column-reverse`, so it hangs below the row |
+
+The `zen-sidebar-expanded="true"` trap is the one to remember - the root
+carries it permanently with horizontal tabs, so every Zen rule written as
+"only when the sidebar is collapsed" never fires here. That is what put the
+media-controls bar in the row and the window-buttons clone on the Library.
+
+Not checked on this build: the Ctrl+Tab switcher. Its popup is sized and
+centred from `screen.availWidth`, not the window, so a headless run measures
+it against a 1366px virtual screen and the numbers mean nothing - it has to
+be looked at in a real window.

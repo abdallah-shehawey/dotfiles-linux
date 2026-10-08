@@ -1,0 +1,83 @@
+{
+  "power-saver": {
+    "before": {
+      "profile": "power-saver",
+      "tuned": "('desktop-smooth-powersave',)",
+      "epp": "balance_performance",
+      "noTurbo": "0",
+      "platform": "balanced"
+    },
+    "after": {
+      "profile": "power-saver",
+      "tuned": "('desktop-smooth-powersave',)",
+      "epp": "balance_performance",
+      "noTurbo": "0",
+      "platform": "balanced"
+    },
+    "error": "",
+    "measurements": {
+      "baseline": null,
+      "rounded": {
+        "frames": 237,
+        "medianMs": 6.038,
+        "p95Ms": 7.082,
+        "maxMs": 9.07,
+        "over12ms": 0
+      }
+    }
+  },
+  "balanced": {
+    "before": {
+      "profile": "balanced",
+      "tuned": "('balanced',)",
+      "epp": "balance_performance",
+      "noTurbo": "0",
+      "platform": "balanced"
+    },
+    "after": {
+      "profile": "balanced",
+      "tuned": "('balanced',)",
+      "epp": "balance_performance",
+      "noTurbo": "0",
+      "platform": "balanced"
+    },
+    "error": "",
+    "measurements": {
+      "baseline": null,
+      "rounded": {
+        "frames": 228,
+        "medianMs": 6.038,
+        "p95Ms": 7.434,
+        "maxMs": 10.102,
+        "over12ms": 0
+      }
+    }
+  },
+  "performance": {
+    "before": {
+      "profile": "performance",
+      "tuned": "('throughput-performance',)",
+      "epp": "performance",
+      "noTurbo": "0",
+      "platform": "performance"
+    },
+    "after": {
+      "profile": "performance",
+      "tuned": "('throughput-performance',)",
+      "epp": "performance",
+      "noTurbo": "0",
+      "platform": "performance"
+    },
+    "error": "",
+    "measurements": {
+      "baseline": null,
+      "rounded": {
+        "frames": 238,
+        "medianMs": 6.044,
+        "p95Ms": 6.98,
+        "maxMs": 11.041,
+        "over12ms": 0
+      }
+    }
+  }
+}

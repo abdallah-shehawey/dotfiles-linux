@@ -1,0 +1,9 @@
+{
+  "uuid": "rounded-corners-light@local",
+  "name": "Rounded Corners Light",
+  "description": "Cached rounded windows and live Overview previews with native animation timing, subtle continuous shadows, curved resize grips and safe size transitions.",
+  "shell-version": [
+    "50"
+  ],
+  "version": 5
+}

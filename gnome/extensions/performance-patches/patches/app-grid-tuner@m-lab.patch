@@ -1,0 +1,97 @@
+--- a/app-grid-tuner@m-lab/extension.js
++++ b/app-grid-tuner@m-lab/extension.js
+@@ -107,7 +107,7 @@
+     }
+   }
+ 
+-  applyFolderViewChanges() {
++  applyFolderViewChanges(onlyIcon = null) {
+     return this._safeExecute(() => {
+       const MainAppDisplay = this._getAppDisplay();
+       if (!MainAppDisplay) return;
+@@ -119,11 +119,14 @@
+ 
+       const activeFolderIcons = new Set(MainAppDisplay._folderIcons);
+       this.originalStates.forEach((state, icon) => {
+-        if (!activeFolderIcons.has(icon))
++        if (!activeFolderIcons.has(icon)) {
++          if (icon._ensureFolderDialog === state.ensureFolderDialogWrapper)
++            icon._ensureFolderDialog = state.ensureFolderDialog;
+           this.originalStates.delete(icon);
++        }
+       });
+ 
+-      MainAppDisplay._folderIcons.forEach(icon => {
++      (onlyIcon ? [onlyIcon] : MainAppDisplay._folderIcons).forEach(icon => {
+         this._safeExecute(() => {
+           if (!icon.view || !icon.view._grid || !icon.view._grid.layout_manager) {
+             console.warn('[AppGridTuner] Invalid folder icon structure');
+@@ -149,9 +152,37 @@
+ 
+           const storedState = this.originalStates.get(icon);
+ 
++          // Keep native lazy dialog creation: style the first dialog before
++          // _ensureFolderDialog returns, instead of constructing every folder.
++          if (!storedState.ensureFolderDialogWrapper && typeof icon._ensureFolderDialog === 'function') {
++            const tuner = this;
++            storedState.ensureFolderDialog = icon._ensureFolderDialog;
++            storedState.ensureFolderDialogWrapper = function (...args) {
++              const previousDialog = this._dialog;
++              const result = storedState.ensureFolderDialog.apply(this, args);
++              if (this._dialog && this._dialog !== previousDialog) {
++                tuner.applyFolderViewChanges(this);
++                tuner.applyAnimationSettings();
++              }
++              return result;
++            };
++            icon._ensureFolderDialog = storedState.ensureFolderDialogWrapper;
++          }
++
++          const appIds = icon.getAppIds();
++          const signature = JSON.stringify([appIds, this.folderIconSize, this.fRows, this.fColumns,
++            this.folderIconLabelFontSize, this.folderTileBackgroundColor, this.folderTileBackgroundOpacity,
++            this.folderTileBorderRadius, this.folderTileBorderColor, this.folderItemSpacing,
++            this.folderPopupWidth, this.folderItemHeightOffset, this.folderPopupHeightOffset,
++            this.folderSidePadding, this.folderPopupBackgroundColor, this.folderPopupBackgroundOpacity,
++            this.folderPopupBorderRadius, this.folderPopupBorderColor, this.hideFolderTitle,
++            global.stage.height]);
++          if (storedState.appliedSignature === signature && storedState.appliedDialog === icon._dialog)
++            return;
++
+           icon.view._grid.layout_manager.fixedIconSize = this.folderIconSize;
+-          icon.view._grid.layout_manager.rowsPerPage = (Math.ceil(icon.getAppIds().length / this.fColumns) < this.fRows) ? Math.ceil(icon.getAppIds().length / this.fColumns) : this.fRows;
+-          icon.view._grid.layout_manager.columnsPerPage = (icon.getAppIds().length > this.fColumns) ? this.fColumns : icon.getAppIds().length;
++          icon.view._grid.layout_manager.rowsPerPage = Math.min(Math.ceil(appIds.length / this.fColumns), this.fRows);
++          icon.view._grid.layout_manager.columnsPerPage = Math.min(appIds.length, this.fColumns);
+ 
+           // Apply folder icon label font size if configured (> 0)
+           const originalGridStyle = storedState?.gridStyle || '';
+@@ -207,10 +238,6 @@
+             tile.style = tileStyle;
+           }
+           
+-          if (icon._ensureFolderDialog) {
+-            icon._ensureFolderDialog();
+-          }
+-          
+           if (icon._dialog && icon._dialog.child) {
+             if (storedState && storedState.dialogStyle === undefined) {
+               storedState.dialogStyle = icon._dialog.child.style || '';
+@@ -392,6 +419,8 @@
+               }
+             }
+           }
++          storedState.appliedSignature = signature;
++          storedState.appliedDialog = icon._dialog;
+         });
+       });
+     });
+@@ -905,6 +934,8 @@
+       // Restore folder states
+       this.originalStates.forEach((originalState, icon) => {
+         this._safeExecute(() => {
++          if (icon._ensureFolderDialog === originalState.ensureFolderDialogWrapper)
++            icon._ensureFolderDialog = originalState.ensureFolderDialog;
+           if (icon.view && icon.view._grid && icon.view._grid.layout_manager) {
+             icon.view._grid.layout_manager.fixedIconSize = originalState.fixedIconSize;
+             icon.view._grid.layout_manager.rowsPerPage = originalState.rowsPerPage;

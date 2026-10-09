@@ -1,0 +1,475 @@
+{
+  "variant": "optimized",
+  "limitation": "Private headless 2560x1440@165; not physical presentation FPS; GSConnect intentionally excluded",
+  "enabled": [
+    {
+      "uuid": "tiling-assistant@leleat-on-github",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "runcat@kolesnikov.se",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "blur-my-shell@aunetx",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "clipboard-indicator@tudmotu.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "CoverflowAltTab@palatis.blogspot.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "dash-to-panel@jderose9.github.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "chakra-switch@narkagni",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "just-perfection-desktop@just-perfection",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "unlockDialogBackground@sun.wxg@gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "Vitals@CoreCoding.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "system-monitor@gnome-shell-extensions.gcampax.github.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "app-grid-tuner@m-lab",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "rounded-corners-light@local",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "touchpad-gesture-customization@coooolapps.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "gnome-fuzzy-app-search@gnome-shell-extensions.Czarlie.gitlab.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "status-area-horizontal-spacing@mathematical.coffee.gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "appindicatorsupport@rgcjonas.gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "background-logo@fedorahosted.org",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "performance-test@local",
+      "state": 1,
+      "errors": ""
+    }
+  ],
+  "checks": [
+    {
+      "name": "six private windows",
+      "ok": true,
+      "detail": 6
+    },
+    {
+      "name": "native overview duration",
+      "ok": true,
+      "detail": 271.7
+    },
+    {
+      "name": "unopened folders remain lazy",
+      "ok": true,
+      "detail": [
+        {
+          "name": "System",
+          "dialog": false
+        },
+        {
+          "name": "System",
+          "dialog": false
+        },
+        {
+          "name": "Wine",
+          "dialog": false
+        },
+        {
+          "name": "Social Media",
+          "dialog": false
+        },
+        {
+          "name": "Programming",
+          "dialog": false
+        },
+        {
+          "name": "Office",
+          "dialog": false
+        },
+        {
+          "name": "Google",
+          "dialog": false
+        },
+        {
+          "name": "AI",
+          "dialog": false
+        },
+        {
+          "name": "hyprland",
+          "dialog": false
+        },
+        {
+          "name": "PCB",
+          "dialog": false
+        }
+      ]
+    },
+    {
+      "name": "folder dialog can be created",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder grid configured",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder opens",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder blur attached before visible paint",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "RunCat visible animation active",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "RunCat hidden timer paused",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "RunCat hidden sprite stable",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "RunCat animation resumes",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "network monitor polling visible",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "network monitor polling paused",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "network monitor resumes",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "unpinned absolute sensors skipped",
+      "ok": true,
+      "detail": [
+        "Processor",
+        "Network",
+        "Storage",
+        "Gpu"
+      ]
+    },
+    {
+      "name": "rate baselines maintained",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "menu queries all enabled categories",
+      "ok": true,
+      "detail": [
+        "Memory",
+        "Processor",
+        "System",
+        "Network",
+        "Storage",
+        "Battery",
+        "Gpu"
+      ]
+    },
+    {
+      "name": "closed menu skips CPU frequency reads",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "closed menu retains CPU/storage baselines",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "closed menu avoids unused battery and memory reads",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "fewer closed menu sensor reads",
+      "ok": true,
+      "detail": {
+        "closed": 31,
+        "open": 39
+      }
+    },
+    {
+      "name": "Vitals full menu remains usable",
+      "ok": true,
+      "detail": 126
+    },
+    {
+      "name": "unchanged folder redisplay cached",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "lazy blur hook restored on disable",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder blur removed on disable",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "lazy blur hook returns on enable",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder creation wrapper restored on disable",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder tuner can re-enable",
+      "ok": true,
+      "detail": null
+    }
+  ],
+  "configuredFactor": 1,
+  "nativeDuration": 271.7,
+  "desktopIdle": {
+    "paints": 64,
+    "cpuMs": 320,
+    "intervals": {
+      "count": 63,
+      "median": 6.077,
+      "p95": 185.661,
+      "max": 187.208,
+      "mean": 52.60001587301587
+    }
+  },
+  "overviewIdle": {
+    "paints": 59,
+    "cpuMs": 310,
+    "intervals": {
+      "count": 58,
+      "median": 6.225,
+      "p95": 198.021,
+      "max": 199.716,
+      "mean": 59.896793103448275
+    }
+  },
+  "foldersBefore": [
+    {
+      "name": "System",
+      "dialog": false
+    },
+    {
+      "name": "System",
+      "dialog": false
+    },
+    {
+      "name": "Wine",
+      "dialog": false
+    },
+    {
+      "name": "Social Media",
+      "dialog": false
+    },
+    {
+      "name": "Programming",
+      "dialog": false
+    },
+    {
+      "name": "Office",
+      "dialog": false
+    },
+    {
+      "name": "Google",
+      "dialog": false
+    },
+    {
+      "name": "AI",
+      "dialog": false
+    },
+    {
+      "name": "hyprland",
+      "dialog": false
+    },
+    {
+      "name": "PCB",
+      "dialog": false
+    }
+  ],
+  "foldersAfter": [
+    {
+      "name": "System",
+      "dialog": false
+    },
+    {
+      "name": "System",
+      "dialog": false
+    },
+    {
+      "name": "Wine",
+      "dialog": false
+    },
+    {
+      "name": "Social Media",
+      "dialog": false
+    },
+    {
+      "name": "Programming",
+      "dialog": false
+    },
+    {
+      "name": "Office",
+      "dialog": false
+    },
+    {
+      "name": "Google",
+      "dialog": false
+    },
+    {
+      "name": "AI",
+      "dialog": false
+    },
+    {
+      "name": "hyprland",
+      "dialog": false
+    },
+    {
+      "name": "PCB",
+      "dialog": false
+    }
+  ],
+  "overview": {
+    "intervals": {
+      "count": 485,
+      "median": 5.995,
+      "p95": 6.672,
+      "max": 14.4,
+      "mean": 6.039371134020614
+    },
+    "paintCpu": {
+      "count": 497,
+      "median": 1.534,
+      "p95": 2.296,
+      "max": 7.705,
+      "mean": 1.6329014084507043
+    },
+    "timings": [
+      {
+        "direction": "showing",
+        "ms": 251.177
+      },
+      {
+        "direction": "hiding",
+        "ms": 260.573
+      },
+      {
+        "direction": "showing",
+        "ms": 255.429
+      },
+      {
+        "direction": "hiding",
+        "ms": 256.39
+      },
+      {
+        "direction": "showing",
+        "ms": 255.404
+      },
+      {
+        "direction": "hiding",
+        "ms": 255.102
+      },
+      {
+        "direction": "showing",
+        "ms": 255.382
+      },
+      {
+        "direction": "hiding",
+        "ms": 255.707
+      },
+      {
+        "direction": "showing",
+        "ms": 255.379
+      },
+      {
+        "direction": "hiding",
+        "ms": 259.508
+      },
+      {
+        "direction": "showing",
+        "ms": 255.482
+      },
+      {
+        "direction": "hiding",
+        "ms": 260.146
+      }
+    ]
+  },
+  "paintFlags": null
+}

@@ -1,0 +1,25 @@
+--- a/system-monitor@gnome-shell-extensions.gcampax.github.com/extension.js
++++ b/system-monitor@gnome-shell-extensions.gcampax.github.com/extension.js
+@@ -65,6 +65,7 @@
+ 
+         this.connect('destroy', () => this._clearTimeout());
+         this.connect('notify::visible', () => this._sync());
++        this.connect('notify::mapped', () => this._sync());
+         this._sync();
+     }
+ 
+@@ -86,12 +87,12 @@
+     }
+ 
+     _sync() {
+-        if (this.visible)
++        if (this.mapped)
+             this._ensureTimeout();
+         else
+             this._clearTimeout();
+ 
+-        if (this.visible)
++        if (this.mapped)
+             this._update();
+     }
+ 

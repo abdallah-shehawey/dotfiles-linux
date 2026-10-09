@@ -1,0 +1,130 @@
+--- a/Vitals@CoreCoding.com/sensors.js
++++ b/Vitals@CoreCoding.com/sensors.js
+@@ -144,11 +144,21 @@
+         }
+ 
+         for (let sensor in this._sensorIcons) {
++            // Absolute-value categories do not need warm rate baselines.
++            // Keep Processor, Network and Storage sampling unchanged so opening
++            // the menu never divides an old counter delta by a short dwell.
++            if (wantedKeys && (sensor === 'memory' || sensor === 'battery' || sensor === 'system')) {
++                const pinned = [...wantedKeys].some(key => key.startsWith('_' + sensor + '_') ||
++                    key.startsWith('__' + sensor + '_') ||
++                    (sensor === 'system' && key === '_processor_process_time_'));
++                if (!pinned)
++                    continue;
++            }
+             // Process Time needs core counts from _queryProcessor even if Processor is hidden
+             if (!this._settings.get_boolean('show-' + sensor)) {
+                 if (sensor === 'processor' && wantedKeys &&
+                     wantedKeys.has('_processor_process_time_'))
+-                    this._queryProcessor(callback, dwell);
++                    this._queryProcessor(callback, dwell, wantedKeys);
+                 continue;
+             }
+ 
+@@ -157,7 +167,7 @@
+                 this._queryTempVoltFan(callback, sensor, wantedKeys);
+             } else {
+                 let method = '_query' + sensor[0].toUpperCase() + sensor.slice(1);
+-                this[method](callback, dwell);
++                this[method](callback, dwell, wantedKeys);
+             }
+         }
+     }
+@@ -209,7 +219,9 @@
+         }).catch(err => { });
+     }
+ 
+-    _queryProcessor(callback, dwell) {
++    _queryProcessor(callback, dwell, wantedKeys = null) {
++        const visible = !wantedKeys || [...wantedKeys].some(key =>
++            key.startsWith('_processor_') || key.startsWith('__processor_'));
+         // check processor usage
+         new FileModule.File('/proc/stat').read("\n").then(lines => {
+             let statistics = {};
+@@ -233,7 +245,7 @@
+                 let total = statistics[cpu];
+ 
+                 // make sure we have data to report
+-                if (this._last_processor['core'][cpu] > 0) {
++                if (visible && this._last_processor['core'][cpu] > 0) {
+                     let delta = (total - this._last_processor['core'][cpu]) / dwell;
+ 
+                     // /proc/stat provides overall usage for us under the 'cpu' heading
+@@ -250,7 +262,7 @@
+             }
+ 
+             // fallback: platforms without cpu MHz in /proc/cpuinfo (some ARM)
+-            if (!this._processor_uses_cpu_info) {
++            if (visible && !this._processor_uses_cpu_info) {
+                 for (let core = 0; core < cores; core++) {
+                     new FileModule.File('/sys/devices/system/cpu/cpu' + core + '/cpufreq/scaling_cur_freq').read().then(value => {
+                         this._last_processor['speed'][core] = parseInt(value);
+@@ -260,6 +272,8 @@
+         }).catch(err => { });
+ 
+         // /proc/cpuinfo lists every core in one file; same values as per-core scaling_cur_freq
++        if (!visible)
++            return;
+         if (this._processor_uses_cpu_info) {
+             new FileModule.File('/proc/cpuinfo').read("\n").then(lines => {
+                 let freqs = [];
+@@ -329,14 +343,15 @@
+         }
+     }
+ 
+-    _queryNetwork(callback, dwell) {
++    _queryNetwork(callback, dwell, wantedKeys = null) {
+         for (let sensor of this._networkIfaces) {
+             new FileModule.File(sensor.path).read().then(value => {
+                 this._returnValue(callback, sensor.name, value, sensor.type, 'storage');
+             }).catch(err => { });
+         }
+ 
+-        if (this._hasWireless)
++        if (this._hasWireless && (!wantedKeys || [...wantedKeys].some(key =>
++            key.startsWith('_network_wifi_'))))
+             this._queryWireless(callback);
+     }
+ 
+@@ -358,9 +373,11 @@
+         }).catch(err => { });
+     }
+ 
+-    _queryStorage(callback, dwell) {
++    _queryStorage(callback, dwell, wantedKeys = null) {
++        const visible = !wantedKeys || [...wantedKeys].some(key =>
++            key.startsWith('_storage_') || key.startsWith('__storage_'));
+         // display zfs arc status, if available
+-        new FileModule.File('/proc/spl/kstat/zfs/arcstats').read().then(lines => {
++        if (visible) new FileModule.File('/proc/spl/kstat/zfs/arcstats').read().then(lines => {
+             let values = '', target = 0, maximum = 0, current = 0;
+ 
+             if (values = lines.match(/c(\s+)(\d+)(\s+)(\d+)/)) target = values[4];
+@@ -380,12 +397,12 @@
+                 if ('/dev/' + loadArray[2] == this._storageDevice) {
+                     var read = (loadArray[5] * 512);
+                     var write = (loadArray[9] * 512);
+-                    this._returnValue(callback, 'Read total', read, 'storage', 'storage');
+-                    this._returnValue(callback, 'Write total', write, 'storage', 'storage');
++                    if (visible) this._returnValue(callback, 'Read total', read, 'storage', 'storage');
++                    if (visible) this._returnValue(callback, 'Write total', write, 'storage', 'storage');
+                     // skip rates until counters are seeded (same pattern as processor cores)
+-                    if (this._lastRead > 0)
++                    if (visible && this._lastRead > 0)
+                         this._returnValue(callback, 'Read rate', (read - this._lastRead) / dwell, 'storage', 'storage');
+-                    if (this._lastWrite > 0)
++                    if (visible && this._lastWrite > 0)
+                         this._returnValue(callback, 'Write rate', (write - this._lastWrite) / dwell, 'storage', 'storage');
+                     this._lastRead = read;
+                     this._lastWrite = write;
+@@ -395,7 +412,7 @@
+         }).catch(err => { });
+ 
+         // skip rest of stats if gtop not available
+-        if (!hasGTop) return;
++        if (!hasGTop || !visible) return;
+ 
+         GTop.glibtop_get_fsusage(this.storage, this._settings.get_string('storage-path'));
+ 

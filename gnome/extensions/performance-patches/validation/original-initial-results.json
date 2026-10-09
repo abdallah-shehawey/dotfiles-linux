@@ -1,0 +1,306 @@
+{
+  "variant": "original",
+  "limitation": "Private headless 2560x1440@165; not physical presentation FPS; GSConnect intentionally excluded",
+  "enabled": [
+    {
+      "uuid": "tiling-assistant@leleat-on-github",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "runcat@kolesnikov.se",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "blur-my-shell@aunetx",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "clipboard-indicator@tudmotu.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "CoverflowAltTab@palatis.blogspot.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "dash-to-panel@jderose9.github.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "chakra-switch@narkagni",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "just-perfection-desktop@just-perfection",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "unlockDialogBackground@sun.wxg@gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "Vitals@CoreCoding.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "system-monitor@gnome-shell-extensions.gcampax.github.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "app-grid-tuner@m-lab",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "rounded-corners-light@local",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "touchpad-gesture-customization@coooolapps.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "gnome-fuzzy-app-search@gnome-shell-extensions.Czarlie.gitlab.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "status-area-horizontal-spacing@mathematical.coffee.gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "appindicatorsupport@rgcjonas.gmail.com",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "background-logo@fedorahosted.org",
+      "state": 1,
+      "errors": ""
+    },
+    {
+      "uuid": "performance-test@local",
+      "state": 1,
+      "errors": ""
+    }
+  ],
+  "checks": [
+    {
+      "name": "six private windows",
+      "ok": true,
+      "detail": 6
+    },
+    {
+      "name": "native overview duration",
+      "ok": true,
+      "detail": 270.193
+    },
+    {
+      "name": "folder dialog can be created",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder grid configured",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "folder opens",
+      "ok": true,
+      "detail": null
+    }
+  ],
+  "configuredFactor": 0.8,
+  "nativeDuration": 270.193,
+  "desktopIdle": {
+    "paints": 63,
+    "cpuMs": 220,
+    "intervals": {
+      "count": 62,
+      "median": 5.831,
+      "p95": 177.464,
+      "max": 187.569,
+      "mean": 54.77669354838709
+    }
+  },
+  "overviewIdle": {
+    "paints": 57,
+    "cpuMs": 220,
+    "intervals": {
+      "count": 56,
+      "median": 6.118,
+      "p95": 194.252,
+      "max": 206.529,
+      "mean": 62.44244642857142
+    }
+  },
+  "foldersBefore": [
+    {
+      "name": "System",
+      "dialog": true
+    },
+    {
+      "name": "System",
+      "dialog": true
+    },
+    {
+      "name": "Wine",
+      "dialog": true
+    },
+    {
+      "name": "Social Media",
+      "dialog": true
+    },
+    {
+      "name": "Programming",
+      "dialog": true
+    },
+    {
+      "name": "Office",
+      "dialog": true
+    },
+    {
+      "name": "Google",
+      "dialog": true
+    },
+    {
+      "name": "AI",
+      "dialog": true
+    },
+    {
+      "name": "hyprland",
+      "dialog": true
+    },
+    {
+      "name": "PCB",
+      "dialog": true
+    }
+  ],
+  "foldersAfter": [
+    {
+      "name": "System",
+      "dialog": true
+    },
+    {
+      "name": "System",
+      "dialog": true
+    },
+    {
+      "name": "Wine",
+      "dialog": true
+    },
+    {
+      "name": "Social Media",
+      "dialog": true
+    },
+    {
+      "name": "Programming",
+      "dialog": true
+    },
+    {
+      "name": "Office",
+      "dialog": true
+    },
+    {
+      "name": "Google",
+      "dialog": true
+    },
+    {
+      "name": "AI",
+      "dialog": true
+    },
+    {
+      "name": "hyprland",
+      "dialog": true
+    },
+    {
+      "name": "PCB",
+      "dialog": true
+    }
+  ],
+  "overview": {
+    "intervals": {
+      "count": 381,
+      "median": 6.038,
+      "p95": 6.735,
+      "max": 15.944,
+      "mean": 6.058582677165354
+    },
+    "paintCpu": {
+      "count": 393,
+      "median": 1.598,
+      "p95": 2.455,
+      "max": 8.863,
+      "mean": 1.7386997455470743
+    },
+    "timings": [
+      {
+        "direction": "showing",
+        "ms": 205.214
+      },
+      {
+        "direction": "hiding",
+        "ms": 206.186
+      },
+      {
+        "direction": "showing",
+        "ms": 203.185
+      },
+      {
+        "direction": "hiding",
+        "ms": 210.036
+      },
+      {
+        "direction": "showing",
+        "ms": 200.977
+      },
+      {
+        "direction": "hiding",
+        "ms": 205.638
+      },
+      {
+        "direction": "showing",
+        "ms": 200.899
+      },
+      {
+        "direction": "hiding",
+        "ms": 208.598
+      },
+      {
+        "direction": "showing",
+        "ms": 203.54
+      },
+      {
+        "direction": "hiding",
+        "ms": 205.563
+      },
+      {
+        "direction": "showing",
+        "ms": 200.879
+      },
+      {
+        "direction": "hiding",
+        "ms": 208.409
+      }
+    ]
+  },
+  "paintFlags": {
+    "0": 1205,
+    "1": 633
+  }
+}

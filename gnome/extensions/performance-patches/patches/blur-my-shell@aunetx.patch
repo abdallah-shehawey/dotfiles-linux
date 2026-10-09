@@ -1,0 +1,115 @@
+--- a/blur-my-shell@aunetx/components/appfolders.js
++++ b/blur-my-shell@aunetx/components/appfolders.js
+@@ -2,6 +2,7 @@
+ import Clutter from 'gi://Clutter';
+ import Cogl from 'gi://Cogl';
+ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
++import { AppFolderDialog } from 'resource:///org/gnome/shell/ui/appDisplay.js';
+ 
+ import { PaintSignals } from '../conveniences/paint_signals.js';
+ 
+@@ -155,6 +156,16 @@
+         brightness = this.settings.appfolder.BRIGHTNESS;
+         sigma = this.settings.appfolder.SIGMA;
+ 
++        // Attach blur at first popup, before its first visible frame. Creating
++        // every unopened folder allocates grids/effects on the Overview path.
++        const hook = { owner: this, original: AppFolderDialog.prototype.popup };
++        this._popupHook = hook;
++        this._popupWrapper = function (...args) {
++            hook.owner?.blur_dialog(this);
++            return hook.original.apply(this, args);
++        };
++        AppFolderDialog.prototype.popup = this._popupWrapper;
++
+         let appDisplay = Main.overview._overview.controls._appDisplay;
+ 
+         if (appDisplay._folderIcons.length > 0) {
+@@ -173,16 +184,20 @@
+             this._log("appfolders hack level 1");
+ 
+         appDisplay._folderIcons.forEach(icon => {
+-            icon._ensureFolderDialog();
++            if (icon._dialog)
++                this.blur_dialog(icon._dialog);
++        });
++    };
+ 
++    blur_dialog(dialog) {
+             if (original_zoomAndFadeIn == null) {
+-                original_zoomAndFadeIn = icon._dialog._zoomAndFadeIn;
++                original_zoomAndFadeIn = dialog._zoomAndFadeIn;
+             }
+             if (original_zoomAndFadeOut == null) {
+-                original_zoomAndFadeOut = icon._dialog._zoomAndFadeOut;
++                original_zoomAndFadeOut = dialog._zoomAndFadeOut;
+             }
+ 
+-            let blur_effect = icon._dialog.get_effect('appfolder-blur');
++            let blur_effect = dialog.get_effect('appfolder-blur');
+             if (!blur_effect) {
+                 blur_effect = new Shell.BlurEffect({
+                     name: 'appfolder-blur',
+@@ -190,24 +205,24 @@
+                     brightness,
+                     mode: Shell.BlurMode.BACKGROUND,
+                 });
+-                icon._dialog.add_effect(blur_effect);
++                dialog.add_effect(blur_effect);
+             } else {
+-                stop_blur_animation(icon._dialog);
++                stop_blur_animation(dialog);
+                 blur_effect.set({ radius: sigma * 2, brightness });
+             }
+ 
+             DIALOGS_STYLES.forEach(
+-                style => icon._dialog._viewBox.remove_style_class_name(style)
++                style => dialog._viewBox.remove_style_class_name(style)
+             );
+ 
+             if (this.settings.appfolder.STYLE_DIALOGS > 0)
+-                icon._dialog._viewBox.add_style_class_name(
++                dialog._viewBox.add_style_class_name(
+                     DIALOGS_STYLES[this.settings.appfolder.STYLE_DIALOGS - 1]
+                 );
+ 
+             // finally override the builtin functions
+-            icon._dialog._zoomAndFadeIn = _zoomAndFadeIn;
+-            icon._dialog._zoomAndFadeOut = _zoomAndFadeOut;
++            dialog._zoomAndFadeIn = _zoomAndFadeIn;
++            dialog._zoomAndFadeOut = _zoomAndFadeOut;
+ 
+ 
+             // HACK
+@@ -221,13 +236,12 @@
+             // [1]: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/2857
+ 
+             if (this.settings.HACKS_LEVEL === 1) {
+-                this.paint_signals.disconnect_all_for_actor(icon._dialog);
+-                this.paint_signals.connect(icon._dialog, blur_effect);
++                this.paint_signals.disconnect_all_for_actor(dialog);
++                this.paint_signals.connect(dialog, blur_effect);
+             } else {
+                 this.paint_signals.disconnect_all();
+             }
+-        });
+-    };
++    }
+ 
+     set_sigma(s) {
+         sigma = s;
+@@ -255,6 +269,14 @@
+     disable() {
+         this._log("removing blur from appfolders");
+ 
++        if (this._popupHook) {
++            this._popupHook.owner = null;
++            if (AppFolderDialog.prototype.popup === this._popupWrapper)
++                AppFolderDialog.prototype.popup = this._popupHook.original;
++            this._popupHook = null;
++            this._popupWrapper = null;
++        }
++
+         let appDisplay = Main.overview._overview.controls._appDisplay;
+         this.paint_signals.disconnect_all();
+ 

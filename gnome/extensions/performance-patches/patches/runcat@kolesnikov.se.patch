@@ -1,0 +1,52 @@
+--- a/runcat@kolesnikov.se/indicator.js
++++ b/runcat@kolesnikov.se/indicator.js
+@@ -66,9 +66,12 @@
+ 
+ 	initDataRefreshSource() {
+ 		const cpuDataProvider = createCpuGenerator()
++		this._destroyed = false
+ 
+ 		const refresh = () => {
+-			cpuDataProvider.next().then(({ value }) => { this.cpuUsage = value }, e => console.error(`${LOG_PREFIX}: ${e}`))
++			cpuDataProvider.next().then(({ value }) => {
++				if (!this._destroyed) this.cpuUsage = value
++			}, e => { if (!this._destroyed) console.error(`${LOG_PREFIX}: ${e}`) })
+ 
+ 			return GLib.SOURCE_CONTINUE
+ 		}
+@@ -135,6 +138,10 @@
+ 		const ticker = createAnimationTicker()
+ 
+ 		const showNextFrame = () => {
++			if (!this.mapped || this._destroyed) {
++				this.animationTimeoutId = null
++				return GLib.SOURCE_REMOVE
++			}
+ 			const nowMs = GLib.get_monotonic_time() / 1_000
+ 			const { index, nextDelayMs } = ticker.advanceTo(nowMs, this.frames.length)
+ 			this.setCurrentSpriteFrame(this.frames[index])
+@@ -151,7 +158,7 @@
+ 
+ 			ticker.setTargetDuration(getAnimationCycleDurationMs(utilization), immediate)
+ 
+-			const shouldAnimate = this.displayingItems.character && this.frames.length > 1
++			const shouldAnimate = this.mapped && this.displayingItems.character && this.frames.length > 1
+ 			const shouldRestart = immediate || this.animationTimeoutId === null
+ 
+ 			if (!shouldAnimate) {
+@@ -173,6 +180,7 @@
+ 			this.connect(`notify::${prop}`, () => updateAnimationState(!this.isAnimationSmoothingEnabled || prop === ReactiveProperties.IS_SPEED_INVERTED))
+ 		}
+ 
++		this.connect('notify::mapped', () => updateAnimationState())
+ 		updateAnimationState()
+ 	}
+ 
+@@ -203,6 +211,7 @@
+ 	}
+ 
+ 	destroy() {
++		this._destroyed = true
+ 		GLib.source_remove(this.refreshDataTimeoutId)
+ 		this.settings.disconnect(this.displayingItemsHandlerId)
+ 		this.stopAnimation()

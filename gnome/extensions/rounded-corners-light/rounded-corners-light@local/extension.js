@@ -1,11 +1,11 @@
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
-import Graphene from 'gi://Graphene';
-import St from 'gi://St';
 import GObject from 'gi://GObject';
+import Graphene from 'gi://Graphene';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
+import St from 'gi://St';
 import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {WindowPreview} from 'resource:///org/gnome/shell/ui/windowPreview.js';
@@ -15,44 +15,80 @@ import {WorkspaceThumbnail} from 'resource:///org/gnome/shell/ui/workspaceThumbn
 const EFFECT_NAME = 'light-rounded-corners';
 const DESKTOP_RADIUS = 24;
 const PREVIEW_RADIUS = DESKTOP_RADIUS;
-const GRIP_PADDING = 4;
-const GRIP_INSET = 6;
 // Match the inner curve of the 8px indicator with its 3px border.
 const THUMBNAIL_RADIUS = 5;
+const GRIP_PADDING = 4;
+const GRIP_INSET = 6;
+
+// The shadow is GNOME's own default, libadwaita 1.9 `window.csd`:
+//   focused   0 0 14px 5px rgb(0 0 0/15%), 0 0 5px 2px rgb(0 0 0/10%), 0 0 0 1px rgb(0 0 0/5%)
+//   backdrop  0 0 14px 5px transparent,    0 0 10px 5px rgb(0 0 0/8%), 0 0 0 1px rgb(0 0 0/5%)
+// Each entry is [alpha, spread, sigma] with sigma = blur / 2, as in CSS.
+const SHADOW_FOCUSED = [[0.15, 5, 7], [0.10, 2, 2.5]];
+const SHADOW_BACKDROP = [[0, 5, 7], [0.08, 5, 5]];
+const SHADOW_RING = 0.05;
+// The focused profile is below 1/512 beyond 24px.
+const SHADOW_EXTENT = 24;
+const FOCUS_TRANSITION_MS = 200;
+
+const MODE_PASS = 0;
+const MODE_CLIP = 1;
+const MODE_SHADOW = 2;
+
 const DECLARATIONS = `
-    uniform vec2 lightSize;
-    uniform vec4 lightBounds;
-    uniform float lightRadius;
-    uniform float lightClipOutside;
+    uniform vec2 rcSize;
+    uniform vec4 rcBounds;
+    uniform float rcRadius;
+    uniform float rcMode;
+    uniform vec4 rcShadow1;
+    uniform vec4 rcShadow2;
+
+    float rcPhi(float x) {
+        // Standard normal CDF; absolute error below 1.5e-4.
+        x = clamp(x, -8.0, 8.0);
+        return 1.0 / (1.0 + exp(-x * (1.5976 + 0.070566 * x * x)));
+    }
 `;
+// Everything outside the rounded frame, including the client's own shadow,
+// is replaced. The shadow is part of this window's paint, so it scales, fades
+// and moves with every open/close/minimize animation and every clone.
 const FRAGMENT = `
-    vec2 p = cogl_tex_coord0_in.xy * lightSize;
-    vec2 edge = min(p - lightBounds.xy, lightBounds.zw - p);
-    if (edge.x >= 0.0 && edge.y >= 0.0) {
-        vec2 delta = max(vec2(lightRadius) - edge, vec2(0.0));
-        float distanceSquared = dot(delta, delta);
-        float inner = max(0.0, lightRadius - 0.5);
-        if (distanceSquared > inner * inner) {
-            float coverage = clamp(lightRadius + 0.5 - sqrt(distanceSquared), 0.0, 1.0);
-            cogl_color_out *= coverage;
+    if (rcMode > 0.5) {
+        vec2 p = cogl_tex_coord0_in.xy * rcSize;
+        vec2 halfSize = 0.5 * (rcBounds.zw - rcBounds.xy);
+        vec2 q = abs(p - 0.5 * (rcBounds.xy + rcBounds.zw)) - halfSize + vec2(rcRadius);
+        float dist = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - rcRadius;
+        float coverage = clamp(0.5 - dist, 0.0, 1.0);
+        cogl_color_out *= coverage;
+        if (rcMode > 1.5 && coverage < 1.0) {
+            float d = max(dist, 0.0);
+            float a1 = rcShadow1.x * rcPhi((rcShadow1.y - d) * rcShadow1.z);
+            float a2 = rcShadow2.x * rcPhi((rcShadow2.y - d) * rcShadow2.z);
+            float ring = rcShadow1.w * clamp(rcShadow2.w + 0.5 - d, 0.0, 1.0);
+            float shadow = 1.0 - (1.0 - a1) * (1.0 - a2) * (1.0 - ring);
+            cogl_color_out += vec4(0.0, 0.0, 0.0,
+                shadow * cogl_color_in.a * (1.0 - cogl_color_out.a));
         }
-    } else if (lightClipOutside > 0.5) {
-        cogl_color_out *= 0.0;
     }
 `;
 
-function createWindowShadow() {
-    // St caches this subtle shadow outside the window's clipping effect.
-    return new St.Widget({
-        name: 'light-rounded-shadow',
-        reactive: false,
-        can_focus: false,
-        style: `border-radius: ${DESKTOP_RADIUS}px; background-color: rgba(0,0,0,0.004);
-            box-shadow: 0 2px 18px 1px rgba(0,0,0,0.20);`,
-    });
+// The ClutterOffscreenEffect framebuffer box, in the actor's own coordinates,
+// for its paint volume. Mirrors Clutter 50's _clutter_actor_box_enlarge_for_effects().
+function fboBox(x1, y1, x2, y2) {
+    const width = Math.floor(x2 - x1 + 0.5);
+    const height = Math.floor(y2 - y1 + 0.5);
+    const right = Math.ceil(x2 + 0.75);
+    const bottom = Math.ceil(y2 + 0.75);
+    return [right - width - 3, bottom - height - 3, width + 3, height + 3];
 }
 
-const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV12'},
+function shadowProfile(focus) {
+    const mix = (a, b) => a + (b - a) * focus;
+    return SHADOW_BACKDROP.map((backdrop, i) =>
+        backdrop.map((value, j) => mix(value, SHADOW_FOCUSED[i][j])));
+}
+
+const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV6'},
 class CornerGrip extends Clutter.Actor {
     _init(window, corner) {
         const cursors = [Clutter.CursorType.NW_RESIZE, Clutter.CursorType.NE_RESIZE,
@@ -80,142 +116,164 @@ class CornerGrip extends Clutter.Actor {
         if (!this.should_pick(context))
             return;
         const r = this.radius;
-        if (this._pickRadius === r) {
-            for (const box of this._pickBoxes)
-                this.pick_box(context, box);
-            return;
-        }
-        this._pickRadius = r;
-        this._pickBoxes = [];
-        const span = r + GRIP_PADDING;
-        for (let y = 0; y < span; y++) {
-            let start = -1;
-            let end = 0;
-            for (let x = 0; x < span; x++) {
-                const distance = Math.hypot(x + 0.5 - span, y + 0.5 - span);
-                if (distance >= r - GRIP_INSET && distance <= r + GRIP_PADDING) {
-                    if (start < 0)
-                        start = x;
-                    end = x + 1;
-                }
-            }
-            if (start < 0)
-                continue;
+        if (this._pickRadius !== r) {
+            this._pickRadius = r;
+            this._pickBoxes = [];
+            const span = r + GRIP_PADDING;
             const right = (this.corner % 2) === 1;
             const bottom = this.corner >= 2;
-            const box = new Clutter.ActorBox({
-                x1: right ? span - end : start,
-                x2: right ? span - start : end,
-                y1: bottom ? span - y - 1 : y,
-                y2: bottom ? span - y : y + 1,
-            });
-            this._pickBoxes.push(box);
-            this.pick_box(context, box);
+            for (let y = 0; y < span; y++) {
+                let start = -1;
+                let end = 0;
+                for (let x = 0; x < span; x++) {
+                    const distance = Math.hypot(x + 0.5 - span, y + 0.5 - span);
+                    if (distance >= r - GRIP_INSET && distance <= r + GRIP_PADDING) {
+                        if (start < 0)
+                            start = x;
+                        end = x + 1;
+                    }
+                }
+                if (start >= 0) {
+                    this._pickBoxes.push(new Clutter.ActorBox({
+                        x1: right ? span - end : start,
+                        x2: right ? span - start : end,
+                        y1: bottom ? span - y - 1 : y,
+                        y2: bottom ? span - y : y + 1,
+                    }));
+                }
+            }
         }
+        for (const box of this._pickBoxes)
+            this.pick_box(context, box);
     }
 });
 
-const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV12'},
+const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV6'},
 class CornerEffect extends Shell.GLSLEffect {
     _init() {
         super._init();
-        this._sizeUniform = this.get_uniform_location('lightSize');
-        this._boundsUniform = this.get_uniform_location('lightBounds');
-        this._radiusUniform = this.get_uniform_location('lightRadius');
-        this._outsideUniform = this.get_uniform_location('lightClipOutside');
-        this._parameters = null;
-        this._geometry = '';
+        this._locations = ['rcSize', 'rcBounds', 'rcRadius', 'rcMode', 'rcShadow1', 'rcShadow2']
+            .map(name => this.get_uniform_location(name));
+        this._values = [];
+        // Window effects: geometry in the actor's own logical coordinates.
+        this.geometry = null;
+        this.focus = 1;
+        this.paintPreview = null;
+        // Thumbnails and close fades: a visible radius for the whole actor.
+        this.textureRadius = undefined;
     }
 
     vfunc_build_pipeline() {
         this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, DECLARATIONS, FRAGMENT, false);
     }
 
-    update(width, height, bounds, radius) {
-        if (this.textureRadius !== undefined)
-            return;
-        if (width <= 0 || height <= 0)
-            return;
-        this._parameters = {width, height, bounds, radius};
-        this.queue_repaint();
+    _set(index, values) {
+        const old = this._values[index];
+        if (old?.length === values.length) {
+            let same = true;
+            for (let i = 0; same && i < values.length; i++)
+                same = old[i] === values[i];
+            if (same)
+                return;
+        }
+        this._values[index] = values;
+        this.set_uniform_float(this._locations[index], values.length, values);
+    }
+
+    _pass() {
+        this._key = null;
+        this._set(3, [MODE_PASS]);
     }
 
     vfunc_paint_target(node, context) {
         const texture = this.get_texture();
-        if (texture) {
-            const width = texture.get_width();
-            const height = texture.get_height();
-            let bounds;
-            let radius;
-            const smallTexture = this.textureRadius !== undefined;
-            let clipOutside = true;
-            if (smallTexture) {
-                // Offscreen paint bounds include client shadows and a guard
-                // border. Mask the allocated frame, not those outer pixels.
-                const actor = this.get_actor();
-                const box = actor.get_allocation_box();
-                const frameWidth = box.get_width();
-                const frameHeight = box.get_height();
-                const dx = (width - frameWidth) / 2;
-                const dy = (height - frameHeight) / 2;
-                bounds = [dx, dy, dx + frameWidth, dy + frameHeight];
-                const [visibleWidth] = actor.get_transformed_size();
-                radius = visibleWidth > 0
-                    ? this.textureRadius * frameWidth / visibleWidth : this.textureRadius;
-            } else if (this.window) {
-                // Read both rectangles at paint time. MetaWindow notifications
-                // can arrive before the X11/Wayland surface has its new size.
-                const frame = this.window.get_frame_rect();
-                const buffer = this.window.get_buffer_rect();
-                const actor = this.get_actor();
-                const allocation = actor.get_allocation_box();
-                const ready = Math.abs(allocation.get_width() - buffer.width) <= 2 &&
-                    Math.abs(allocation.get_height() - buffer.height) <= 2 &&
-                    width >= buffer.width - 2 && height >= buffer.height - 2;
-                if (ready && frame.width > 0 && frame.height > 0) {
-                    const dx = (width - buffer.width) / 2;
-                    const dy = (height - buffer.height) / 2;
-                    const x = frame.x - buffer.x + dx;
-                    const y = frame.y - buffer.y + dy;
-                    bounds = [x, y, x + frame.width, y + frame.height];
-                    radius = DESKTOP_RADIUS;
-                    if (this.paintPreview?.get_stage()) {
-                        const [visibleWidth] = this.paintPreview.get_transformed_size();
-                        if (visibleWidth > 0)
-                            radius *= frame.width / visibleWidth;
-                    } else if (this.window.fullscreen || this.window.maximizedHorizontally ||
-                        this.window.maximizedVertically || this.window.minimized) {
-                        // A shared source effect must never round the real
-                        // maximized desktop window, only its Overview clone.
-                        radius = 0;
-                        clipOutside = false;
-                    }
-                } else {
-                    // A buffer in transition must remain fully visible.
-                    bounds = [0, 0, width, height];
-                    radius = 0;
-                    clipOutside = false;
-                }
-            }
-            if (bounds) {
-                radius = Math.min(radius, (bounds[2] - bounds[0]) / 2,
-                    (bounds[3] - bounds[1]) / 2);
-                const geometry = [width, height, ...bounds, radius, clipOutside].join(',');
-                if (geometry !== this._geometry) {
-                    this._geometry = geometry;
-                    this.set_uniform_float(this._sizeUniform, 2, [width, height]);
-                    this.set_uniform_float(this._boundsUniform, 4, bounds);
-                    this.set_uniform_float(this._radiusUniform, 1, [radius]);
-                    this.set_uniform_float(this._outsideUniform, 1, [clipOutside ? 1 : 0]);
-                }
-            }
-        }
+        if (texture)
+            this._update(texture.get_width(), texture.get_height());
+        else
+            this._pass();
         super.vfunc_paint_target(node, context);
     }
 
+    _update(textureWidth, textureHeight) {
+        const actor = this.get_actor();
+        let frame, visibleWidth = 0, mode;
+        if (this.textureRadius !== undefined) {
+            const allocation = actor.get_allocation_box();
+            frame = [0, 0, allocation.get_width(), allocation.get_height()];
+            [visibleWidth] = actor.get_transformed_size();
+            mode = MODE_CLIP;
+        } else if (this.geometry) {
+            frame = this.geometry.frame;
+            if (this.paintPreview?.get_stage()) {
+                [visibleWidth] = this.paintPreview.get_transformed_size();
+                mode = this.geometry.previewMode;
+            } else {
+                // A maximized window is rounded only inside its Overview
+                // preview; clones elsewhere show it as it is on the desktop.
+                mode = this.geometry.desktopMode;
+            }
+            if (mode === MODE_PASS) {
+                this._pass();
+                return;
+            }
+            // Most desktop paints repeat the previous one exactly.
+            const key = this._key;
+            if (key && key.geometry === this.geometry && key.width === textureWidth &&
+                key.height === textureHeight && key.visibleWidth === visibleWidth &&
+                key.mode === mode && key.focus === this.focus)
+                return;
+            this._key = {geometry: this.geometry, width: textureWidth, height: textureHeight,
+                visibleWidth, mode, focus: this.focus};
+            // A buffer in transition has not caught up with the frame yet:
+            // show it intact rather than clip it with the new geometry.
+            const allocation = actor.get_allocation_box();
+            if (Math.abs(allocation.get_width() - this.geometry.width) > 0.5 ||
+                Math.abs(allocation.get_height() - this.geometry.height) > 0.5) {
+                this._pass();
+                return;
+            }
+        } else {
+            this._pass();
+            return;
+        }
+
+        // The framebuffer covers the paint volume Clutter computed for this
+        // paint. Read it: fractional scales pad it by a fraction of a pixel.
+        const volume = actor.get_paint_volume();
+        if (!volume) {
+            this._pass();
+            return;
+        }
+        const origin = volume.get_origin();
+        const [x, y, width, height] = fboBox(origin.x, origin.y,
+            origin.x + volume.get_width(), origin.y + volume.get_height());
+        // Texels per logical pixel.
+        const scale = textureWidth / width;
+        if (!Number.isInteger(scale) || scale < 1 || textureHeight !== height * scale) {
+            this._pass();
+            return;
+        }
+        const bounds = [(frame[0] - x) * scale, (frame[1] - y) * scale,
+            (frame[2] - x) * scale, (frame[3] - y) * scale];
+        const frameWidth = frame[2] - frame[0];
+        let radius = (this.textureRadius ?? DESKTOP_RADIUS) * scale;
+        if (visibleWidth > 0)
+            radius *= frameWidth / visibleWidth;
+        radius = Math.min(radius, (bounds[2] - bounds[0]) / 2, (bounds[3] - bounds[1]) / 2);
+
+        this._set(0, [textureWidth, textureHeight]);
+        this._set(1, bounds);
+        this._set(2, [radius]);
+        this._set(3, [mode]);
+        if (mode === MODE_SHADOW) {
+            const [[a1, s1, g1], [a2, s2, g2]] = shadowProfile(this.focus);
+            this._set(4, [a1, s1 * scale, 1 / (g1 * scale), SHADOW_RING]);
+            this._set(5, [a2, s2 * scale, 1 / (g2 * scale), scale]);
+        }
+    }
 });
 
-const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV13'},
+const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV6'},
 class PreviewContextEffect extends Clutter.Effect {
     _init(source, previewActor) {
         super._init();
@@ -253,24 +311,22 @@ export default class RoundedCornersLight extends Extension {
         this._animating = Main.overview.animationInProgress;
         this._injections = new InjectionManager();
         const extension = this;
-        // Disable clipping before GNOME captures its resize animation snapshot.
+        // GNOME snapshots the old frame before a size change, waits for the
+        // client's new buffer, then animates between the two. The snapshot
+        // keeps the look the window had; the new buffer is shown intact
+        // until it arrives, and with its own corners while it animates.
         this._injections.overrideMethod(Main.wm, '_prepareAnimationInfo', original => function (...args) {
-            const actor = args[1];
-            const record = extension._windows.get(actor);
-            if (record) {
-                record.suspended = true;
-                record.effect?.set_enabled(false);
-            }
+            const record = extension._windows.get(args[1]);
+            if (record)
+                extension._prepareSnapshot(record, args[3]);
             try {
                 return original.apply(this, args);
             } finally {
-                if (record) {
-                    record.suspended = false;
+                if (record)
                     extension._syncWindow(record);
-                }
             }
         });
-        for (const method of ['_sizeChangeWindowDone', '_minimizeWindowDone', '_unminimizeWindowDone']) {
+        for (const method of ['_sizeChangedWindow', '_sizeChangeWindowDone']) {
             this._injections.overrideMethod(Main.wm, method, original => function (...args) {
                 try {
                     return original.apply(this, args);
@@ -321,26 +377,22 @@ export default class RoundedCornersLight extends Extension {
             this._inOverview = true;
             this._animating = true;
             this._syncWindows();
-            this._syncPreviewEffects();
+            this._syncThumbnails();
         });
         this._connect(Main.overview, 'shown', () => {
             this._animating = false;
-            this._syncPreviewEffects();
+            this._syncThumbnails();
         });
         this._connect(Main.overview, 'hiding', () => {
             this._clearCloseAnimations();
             this._animating = true;
-            this._syncPreviewEffects();
+            this._syncThumbnails();
         });
-        // Mapped/created actors enable their own masks. Scanning every preview
-        // on every animation adjustment value is unnecessary.
         this._connect(Main.overview, 'hidden', () => {
             this._inOverview = false;
             this._animating = false;
             this._syncWindows();
         });
-        this._connect(global.display, 'restacked', () => this._syncWindows());
-        this._connect(global.workspace_manager, 'active-workspace-changed', () => this._syncWindows());
         this._connect(global.display, 'window-created', (_, window) => {
             const actor = window.get_compositor_private();
             if (actor)
@@ -348,7 +400,7 @@ export default class RoundedCornersLight extends Extension {
         });
         for (const actor of global.get_window_actors())
             this._trackWindow(actor);
-        console.log('Rounded Corners Light revision 5 loaded (cached source masks, native Overview timing)');
+        console.log('Rounded Corners Light revision 6 loaded (in-window default shadow)');
     }
 
     _connect(object, signal, callback, connections = this._connections) {
@@ -366,31 +418,30 @@ export default class RoundedCornersLight extends Extension {
             return;
         if (![Meta.WindowType.NORMAL, Meta.WindowType.DIALOG, Meta.WindowType.MODAL_DIALOG].includes(window.windowType))
             return;
-        const record = {actor, window, target: null, effect: null, connections: []};
+        const x11 = window.get_client_type() === Meta.WindowClientType.X11;
+        const record = {actor, window, x11, target: null, effect: null, volume: null,
+            grips: null, focus: window.appears_focused ? 1 : 0, timeline: null, connections: []};
         this._windows.set(actor, record);
-        const update = () => this._syncWindow(record);
-        this._connect(actor, 'notify::first-child', update, record.connections);
-        this._connect(actor, 'notify::width', update, record.connections);
-        this._connect(actor, 'notify::height', update, record.connections);
-        this._connect(actor, 'notify::x', update, record.connections);
-        this._connect(actor, 'notify::y', update, record.connections);
-        this._connect(actor, 'notify::scale-x', update, record.connections);
-        this._connect(actor, 'notify::scale-y', update, record.connections);
-        this._connect(actor, 'notify::visible', update, record.connections);
-        this._connect(actor, 'notify::opacity', update, record.connections);
-        this._connect(actor, 'notify::parent', update, record.connections);
-        this._connect(window, 'size-changed', update, record.connections);
-        this._connect(window, 'position-changed', update, record.connections);
-        this._connect(window, 'notify::maximized-horizontally', update, record.connections);
-        this._connect(window, 'notify::maximized-vertically', update, record.connections);
-        this._connect(window, 'notify::fullscreen', update, record.connections);
-        this._connect(window, 'notify::minimized', update, record.connections);
+        const sync = () => this._syncWindow(record);
+        // Only size and state matter: moves and stacking need no work, since
+        // everything this extension draws is inside the window actor.
+        this._connect(window, 'size-changed', sync, record.connections);
+        for (const property of ['maximized-horizontally', 'maximized-vertically', 'fullscreen'])
+            this._connect(window, `notify::${property}`, sync, record.connections);
+        this._connect(window, 'notify::appears-focused', () => this._fadeFocus(record), record.connections);
+        this._connect(actor, 'notify::width', sync, record.connections);
+        this._connect(actor, 'notify::height', sync, record.connections);
+        // An X11 window can replace its surface actor; keep the effect on the
+        // current one and the grips above it.
+        if (x11)
+            this._connect(actor, 'child-added', sync, record.connections);
         this._connect(actor, 'destroy', () => {
             this._disconnect(record.connections);
-            this._destroyAdornments(record);
+            record.timeline?.stop();
+            record.timeline = null;
             this._windows.delete(actor);
         }, record.connections);
-        update();
+        sync();
     }
 
     _syncWindows() {
@@ -399,94 +450,150 @@ export default class RoundedCornersLight extends Extension {
     }
 
     _syncWindow(record) {
+        if (record.syncing)
+            return;
+        record.syncing = true;
+        try {
+            this._syncWindowState(record);
+        } finally {
+            record.syncing = false;
+        }
+        if (record.effect?.enabled)
+            record.effect.queue_repaint();
+    }
+
+    _syncWindowState(record) {
         const {actor, window} = record;
-        const changingSize = record.suspended || actor.__animationInfo ||
-            Main.wm._resizing.has(actor) || Main.wm._resizePending.has(actor) ||
-            Main.wm._minimizing.has(actor) || Main.wm._unminimizing.has(actor);
-        const enabled = !changingSize && !window.minimized &&
-            !window.fullscreen && !window.maximizedHorizontally && !window.maximizedVertically;
-        // GNOME's window group and preview visibility transfer the shadow
-        // together with the window; do not hide it early on `showing`.
-        this._syncAdornments(record, enabled);
-        // One source mask serves both the desktop and its live clones. Install
-        // it before the first preview paint, including maximized/minimized apps.
-        if (changingSize || (!enabled && !this._inOverview && !record.previews?.size)) {
+        // Between GNOME's snapshot and the client's new buffer the actor is
+        // frozen on its old contents, which must not take the new geometry.
+        const waitingForBuffer = Main.wm._resizePending.has(actor) ||
+            (!!actor.__animationInfo && !Main.wm._resizing.has(actor));
+        const floating = !window.fullscreen &&
+            !window.maximizedHorizontally && !window.maximizedVertically;
+        const desktop = floating && !waitingForBuffer;
+
+        const target = record.x11 ? actor.get_first_child() : actor;
+        if (!target || !(desktop || this._inOverview)) {
+            this._setChildren(record, false);
             record.effect?.set_enabled(false);
             return;
         }
-        const target = window.get_client_type() === Meta.WindowClientType.X11
-            ? actor.get_first_child() : actor;
-        if (!target)
-            return;
         if (record.target !== target) {
             if (record.effect)
-                record.target.remove_effect(record.effect);
+                record.target?.remove_effect(record.effect);
             record.target = target;
             record.effect = new CornerEffect();
-            record.effect.window = window;
+            record.effect.focus = record.focus;
             target.add_effect_with_name(EFFECT_NAME, record.effect);
         }
-        // Clutter already invalidates changed buffers and allocations. Moving
-        // or restacking an unchanged window must not invalidate its texture.
+
+        const frameRect = window.get_frame_rect();
+        const bufferRect = window.get_buffer_rect();
+        const fx = frameRect.x - bufferRect.x;
+        const fy = frameRect.y - bufferRect.y;
+        const frame = [fx, fy, fx + frameRect.width, fy + frameRect.height];
+        const valid = frameRect.width > 0 && frameRect.height > 0;
+        record.effect.geometry = valid ? {frame, width: bufferRect.width, height: bufferRect.height,
+            desktopMode: desktop ? MODE_SHADOW : MODE_PASS,
+            previewMode: floating ? MODE_SHADOW : MODE_CLIP} : null;
+        if (valid && desktop)
+            record.lastFloating = {frame, width: bufferRect.width, height: bufferRect.height};
+        this._setChildren(record, desktop && valid, frame);
         record.effect.set_enabled(true);
     }
 
-    _destroyAdornments(record) {
-        record.shadow?.destroy();
-        record.shadow = null;
-        for (const grip of record.grips ?? [])
-            grip.destroy();
-        record.grips = null;
+    _prepareSnapshot(record, change) {
+        // Mutter flags the new state before GNOME snapshots the old frame for
+        // its size animation, while the actor still holds the old buffer.
+        // Show that snapshot as the window looked: square when it leaves
+        // maximized or fullscreen, otherwise rounded, without its shadow.
+        if (!record.effect)
+            return;
+        if (change === Meta.SizeChange.UNMAXIMIZE || change === Meta.SizeChange.UNFULLSCREEN) {
+            record.effect.set_enabled(false);
+            return;
+        }
+        const last = record.lastFloating;
+        const target = record.x11 ? record.actor.get_first_child() : record.actor;
+        if (!last || record.target !== target)
+            return;
+        const [width, height] = target.get_size();
+        if (Math.abs(width - last.width) > 0.5 || Math.abs(height - last.height) > 0.5)
+            return;
+        record.effect.geometry = {frame: last.frame, width: last.width, height: last.height,
+            desktopMode: MODE_CLIP, previewMode: MODE_CLIP};
+        record.effect.set_enabled(true);
     }
 
-    _syncAdornments(record, enabled) {
+    _setChildren(record, wanted, frame) {
         const {actor, window} = record;
-        if (!enabled || !actor.get_stage() || !actor.visible ||
-            !window.located_on_workspace(global.workspace_manager.get_active_workspace())) {
-            record.shadow?.hide();
+        if (!wanted) {
+            record.volume?.destroy();
+            record.volume = null;
             for (const grip of record.grips ?? [])
-                grip.hide();
+                grip.destroy();
+            record.grips = null;
             return;
         }
-
-        const parent = actor.get_parent();
-        if (!parent)
-            return;
-
-        if (!record.shadow || record.shadow.get_parent() !== parent) {
-            this._destroyAdornments(record);
-            record.shadow = createWindowShadow();
-            parent.add_child(record.shadow);
-            if (window.allows_resize()) {
-                record.grips = [0, 1, 2, 3].map(corner => new CornerGrip(window, corner));
-                for (const grip of record.grips)
-                    parent.add_child(grip);
+        const [x1, y1, x2, y2] = frame;
+        if (!record.x11) {
+            if (!record.volume) {
+                // Painted area for the shadow: an empty actor below the
+                // surfaces. Window actors union their children's volumes.
+                record.volume = new Clutter.Actor({name: 'light-rounded-volume', reactive: false});
+                actor.insert_child_below(record.volume, null);
             }
+            record.volume.set_position(x1 - SHADOW_EXTENT, y1 - SHADOW_EXTENT);
+            record.volume.set_size(x2 - x1 + 2 * SHADOW_EXTENT, y2 - y1 + 2 * SHADOW_EXTENT);
         }
-
-        const frame = window.get_frame_rect();
-        // SSD actors include their titlebar; CSD actors start at the buffer's
-        // shadow. Convert the actual frame instead of assuming either origin.
-        // MetaWindowGroup can be paintable without an allocation, so its
-        // transform_stage_point() may fail. Desktop parent groups are unscaled.
-        const [parentX, parentY] = parent.get_transformed_position();
-        const x = frame.x - parentX;
-        const y = frame.y - parentY;
-        record.shadow.set_position(x, y);
-        record.shadow.set_size(Math.max(1, frame.width), Math.max(1, frame.height));
-        record.shadow.opacity = actor.opacity;
-        parent.set_child_below_sibling(record.shadow, actor);
-        record.shadow.show();
-        const radius = Math.min(DESKTOP_RADIUS, frame.width / 2, frame.height / 2);
+        if (!window.allows_resize())
+            return;
+        if (!record.grips) {
+            record.grips = [0, 1, 2, 3].map(corner => new CornerGrip(window, corner));
+            for (const grip of record.grips)
+                actor.add_child(grip);
+        }
+        const radius = Math.min(DESKTOP_RADIUS, (x2 - x1) / 2, (y2 - y1) / 2);
         const span = radius + GRIP_PADDING;
-        for (const grip of record.grips ?? []) {
+        for (const grip of record.grips) {
             grip.radius = radius;
-            grip.set_position(x + (grip.corner % 2 ? frame.width - radius : -GRIP_PADDING),
-                y + (grip.corner >= 2 ? frame.height - radius : -GRIP_PADDING));
+            grip.set_position(grip.corner % 2 ? x2 - radius : x1 - GRIP_PADDING,
+                grip.corner >= 2 ? y2 - radius : y1 - GRIP_PADDING);
             grip.set_size(span, span);
-            parent.set_child_above_sibling(grip, actor);
-            grip.visible = !this._inOverview;
+            if (actor.get_last_child() !== record.grips[3])
+                actor.set_child_above_sibling(grip, null);
         }
+    }
+
+    _fadeFocus(record) {
+        const target = record.window.appears_focused ? 1 : 0;
+        record.timeline?.stop();
+        record.timeline = null;
+        const apply = value => {
+            record.focus = value;
+            if (record.effect) {
+                record.effect.focus = value;
+                if (record.effect.enabled)
+                    record.effect.queue_repaint();
+            }
+        };
+        if (!record.actor.is_mapped() || !St.Settings.get().enable_animations) {
+            apply(target);
+            return;
+        }
+        const start = record.focus;
+        const timeline = new Clutter.Timeline({actor: record.actor, duration: FOCUS_TRANSITION_MS});
+        timeline.set_progress_mode(Clutter.AnimationMode.EASE_OUT_QUAD);
+        timeline.connect('new-frame', () =>
+            apply(start + (target - start) * timeline.get_progress()));
+        timeline.connect('stopped', (_, finished) => {
+            if (finished)
+                apply(target);
+            if (record.timeline === timeline)
+                record.timeline = null;
+        });
+        record.timeline = timeline;
+        timeline.start();
     }
 
     _updateBackground(actor) {
@@ -524,61 +631,26 @@ export default class RoundedCornersLight extends Extension {
         update();
     }
 
-    _syncPreviewEffects() {
-        // Install an enabled mask at construction time, including before the
-        // overview's showing signal. Never wait for animation completion.
-        for (const records of [this._thumbnails]) {
-            for (const record of records.values()) {
-                const enabled = record.actor.get_stage() !== null;
-                if (record.effect.enabled !== enabled)
-                    record.effect.set_enabled(enabled);
-            }
+    _syncThumbnails() {
+        for (const record of this._thumbnails.values()) {
+            const enabled = record.actor.get_stage() !== null;
+            if (record.effect.enabled !== enabled)
+                record.effect.set_enabled(enabled);
         }
     }
 
     _roundPreview(preview) {
-        const actor = preview.window_container;
-        if (this._previews.has(preview)) {
-            this._bindPreviewClones(this._previews.get(preview));
-            return;
+        let record = this._previews.get(preview);
+        if (!record) {
+            record = {actor: preview.window_container, cloneEffects: new Map(), connections: []};
+            this._previews.set(preview, record);
+            this._connect(preview, 'destroy', () => {
+                this._disconnect(record.connections);
+                for (const item of record.cloneEffects.values())
+                    this._disconnect(item.connections);
+                this._previews.delete(preview);
+            }, record.connections);
         }
-        const shadow = createWindowShadow();
-        shadow.name = 'light-rounded-preview-shadow';
-        shadow.set_pivot_point(0.5, 0.5);
-        shadow.add_constraint(new Clutter.BindConstraint({
-            source: actor, coordinate: Clutter.BindCoordinate.ALL,
-        }));
-        preview.add_child(shadow);
-        preview.set_child_below_sibling(shadow, actor);
-        const record = {actor, shadow, cloneEffects: new Map(), connections: []};
-        this._previews.set(preview, record);
-        this._bindPreviewClones(record);
-        const update = () => {
-            // A sibling BindConstraint may be allocated before its source
-            // during an overview relayout. Commit the source's new box now,
-            // rather than leaving the shadow at last frame's dimensions.
-            if (actor.has_allocation())
-                shadow.allocate(actor.get_allocation_box());
-            shadow.set_scale(actor.scale_x, actor.scale_y);
-            shadow.opacity = actor.opacity;
-            shadow.visible = actor.visible;
-        };
-        this._connect(actor, 'notify::allocation', update, record.connections);
-        for (const property of ['scale-x', 'scale-y', 'opacity', 'visible'])
-            this._connect(actor, `notify::${property}`, update, record.connections);
-        this._connect(preview, 'destroy', () => {
-            this._disconnect(record.connections);
-            this._previews.delete(preview);
-            for (const source of this._windows.values()) {
-                if (source.previews?.delete(actor)) {
-                    this._syncWindow(source);
-                }
-            }
-        }, record.connections);
-        update();
-    }
-
-    _bindPreviewClones(record) {
         for (const clone of record.actor.get_children()) {
             if (record.cloneEffects.has(clone))
                 continue;
@@ -589,8 +661,6 @@ export default class RoundedCornersLight extends Extension {
             const source = this._windows.get(sourceActor);
             if (!source)
                 continue;
-            source.previews ??= new Set();
-            source.previews.add(record.actor);
             this._syncWindow(source);
             const effect = new PreviewContextEffect(source, record.actor);
             const item = {effect, connections: []};
@@ -688,16 +758,12 @@ export default class RoundedCornersLight extends Extension {
         const record = {actor, effect, connections: []};
         this._thumbnails.set(actor, record);
         actor.add_effect_with_name(EFFECT_NAME, effect);
-        this._syncPreviewEffects();
-        const update = () => effect.update(actor.width, actor.height,
-            [0, 0, actor.width, actor.height], THUMBNAIL_RADIUS);
-        this._connect(actor, 'notify::mapped', () => this._syncPreviewEffects(), record.connections);
-        this._connect(actor, 'notify::allocation', update, record.connections);
+        this._syncThumbnails();
+        this._connect(actor, 'notify::mapped', () => this._syncThumbnails(), record.connections);
         this._connect(actor, 'destroy', () => {
             this._disconnect(record.connections);
             this._thumbnails.delete(actor);
         }, record.connections);
-        update();
     }
 
     disable() {
@@ -706,9 +772,10 @@ export default class RoundedCornersLight extends Extension {
         this._disconnect(this._connections);
         for (const record of this._windows.values()) {
             this._disconnect(record.connections);
+            record.timeline?.stop();
             if (record.effect)
-                record.target.remove_effect(record.effect);
-            this._destroyAdornments(record);
+                record.target?.remove_effect(record.effect);
+            this._setChildren(record, false);
         }
         for (const record of this._previews.values()) {
             this._disconnect(record.connections);
@@ -716,7 +783,6 @@ export default class RoundedCornersLight extends Extension {
                 this._disconnect(item.connections);
                 clone.remove_effect(item.effect);
             }
-            record.shadow.destroy();
         }
         for (const record of this._thumbnails.values()) {
             this._disconnect(record.connections);

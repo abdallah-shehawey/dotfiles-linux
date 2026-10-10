@@ -1,97 +1,86 @@
 # Rounded Corners Light
 
-Local GNOME Shell 50 extension. Floating normal/dialog windows, window previews,
-and large workspace previews use a visible radius of 24 pixels. Small workspace
-thumbnails use a 5px content radius, matching the native 8px selection indicator
-with its 3px border. Existing and newly created workspaces are tracked.
+Local GNOME Shell 50 extension. Floating normal and dialog windows, their
+Overview previews and the large workspace previews get a 24px radius; the small
+workspace thumbnails get 5px, matching the native 8px selection indicator with
+its 3px border. Maximized, tiled and fullscreen windows stay square on the
+desktop and are rounded only inside their Overview preview.
 
-Desktop clipping reads the current frame and buffer at paint time. A buffer
-whose allocation is still changing passes through intact. Clipping is suspended
-before GNOME captures resize snapshots, through resize/minimize/unminimize, and
-restored at the native animation completion. This prevents old maximized buffer
-sizes from clipping the restored title bar or client contents.
+## Revision 6 (2026-10-10)
 
-Overview close-button requests capture a still image, then fade and slightly
-shrink it for 180ms only after the client is actually unmanaged. Confirmation
-and ignored close requests retain the live preview. Leaving Overview or disabling
+**The shadow is GNOME's own default, drawn inside the window.** It is
+libadwaita 1.9's `window.csd` box-shadow, taken from the installed library:
+
+    focused   0 0 14px 5px rgb(0 0 0/15%), 0 0 5px 2px rgb(0 0 0/10%), 0 0 0 1px rgb(0 0 0/5%)
+    backdrop  0 0 14px 5px transparent,    0 0 10px 5px rgb(0 0 0/8%), 0 0 0 1px rgb(0 0 0/5%)
+
+with the same 200ms ease-out between the two on focus changes. The corner
+shader replaces everything outside the rounded frame, the client's own shadow
+included, with that profile. Because the shadow is part of the window's own
+paint, it grows, fades, minimizes and closes with the window in every native
+animation, and appears at the right scale in Overview previews, workspace
+thumbnails and Alt+Tab clones. Revisions 3 to 5 drew it as a separate actor
+beside the window; GNOME's opening animation scales the window from 1%, so
+that full-size shadow appeared before the window did.
+
+Nothing is added to `global.window_group` any more. Everything this extension
+needs lives inside the window actor, and only while the window floats:
+
+- `light-rounded-volume`: an empty child below the surfaces (Wayland only).
+  Window actors report the union of their children as their paint volume, so
+  it reserves room for the shadow without any per-frame code.
+- `light-rounded-grip-0..3`: the curved resize grips, above the surfaces.
+  They pick only the band around the visible arc (6px inside, 4px outside),
+  use the matching diagonal cursor and start Mutter's own resize grab.
+
+Maximized and fullscreen windows have no extra children, so Mutter's direct
+scanout and single-surface paths are unaffected. Moves and restacking need
+no work at all: only size and state changes are handled.
+
+The corner shader reads the framebuffer geometry from Clutter's own paint
+volume, so the mask is exact at 100%, 125%, 150% and 200% scale. Desktop
+paints that repeat the previous one skip all uniform work.
+
+Size changes: GNOME snapshots the old frame, waits for the client's new buffer
+and animates between the two. The snapshot keeps the look the window had
+(rounded when it was floating, square when it was maximized or fullscreen);
+the frozen old buffer is shown intact until the new one arrives, and a window
+restored from maximized keeps its rounded corners and shadow for the whole
+animation.
+
+Overview close requests capture a still image, then fade and slightly shrink it
+for 180ms only after the client is actually unmanaged. Confirmation dialogs and
+ignored close requests keep the live preview. Leaving the Overview or disabling
 the extension clears all pending images, timers and fading actors.
 
-Revision 5 reuses each window's cached source buffer for live Overview clones.
-There is no GLSL offscreen mask on the repeatedly resized window container.
-A lightweight, non-offscreen clone effect selects the correct 24px stage radius
-for that particular preview paint, including shared/sticky windows and attached
-dialogs. This avoids allocating and rendering a new large preview texture on
-each animation frame. Source masks are installed before the first preview paint,
-including maximized/minimized apps, without rounding their real desktop windows.
-Client damage still updates the native cached buffer: previews are not snapshots.
-Unchanged movement/restacking no longer forcibly invalidates that buffer, and
-the per-animation-value scan of every preview has been removed. Curved grip
-pick rectangles are cached until their radius changes.
-The extension does not modify Overview duration, easing, global animation speed,
-or the user's Just Perfection settings.
-Floating windows have a cached St rounded box-shadow outside their clipping
-effect. Its opacity, visibility, position and stacking follow the window.
-Revision 4 uses the same subtle shadow on desktop and Overview previews:
-`0 2px 18px 1px rgba(0,0,0,0.20)`, instead of revision 3's
-`0 3px 22px 5px rgba(0,0,0,0.50)`. Preview shadows are siblings outside the
-corner mask; their allocation, scale, opacity and visibility follow the window
-container in the same frame. Desktop shadows are no longer hidden early on the
-Overview showing signal, while resize grips remain disabled in Overview.
-Four transparent reactive actors pick only the curved edge band (6px inside,
-4px outside), use the matching diagonal cursor and begin Mutter's native resize
-grab. The interior, including titlebar buttons, is not picked by these grips.
-Window destruction and extension teardown destroy both shadow and grips.
-Workspace backgrounds use native Mutter rounded clipping.
+Workspace backgrounds use Mutter's native rounded clipping.
 
-Version 2 was checked in an isolated GNOME 50.5 Wayland session with X11 server
-and client decorations and Wayland client decorations. All 18 resize/restore/
-minimize/fullscreen cases retained all client edge markers, with a 1px tolerance
-for outer antialiasing. Two consecutive close fades, a retained unclosed client,
-Overview interruption and extension teardown passed. Evidence is saved under:
-`~/.local/state/rounded-corners/20261008-030123/resize-close-validation`.
+## Verification
 
-Revision 3 was independently tested in an isolated GNOME 50.5 Wayland compositor
-on 2026-10-08: 43 checks, 12 actual curved-corner pointer drags (four corners in
-each X11 SSD, X11 CSD and Wayland CSD fixture), 135 Overview paints with an active
-rounded mask, positive shadow pixels on all four sides, titlebar interior input,
-size/minimize/fullscreen transitions, and complete ornament teardown.
-Evidence and the previous installed files are saved at:
-`/home/abdallah-shehawey/.local/state/rounded-corners/revision3-v6CXbE`.
-The test wrapper enables unsafe mode only in its private test compositor; it is
-not part of the installed extension.
+Private GNOME Shell 50.5 Wayland session, 2560x1440 at 165Hz, with libadwaita
+(Wayland), GTK3 headerbar (Wayland) and Mutter-framed X11 windows, and Blur My
+Shell running with the user's real settings:
 
-Revision 4 passed 61 checks in an isolated GNOME 50.5 session: 12 native pointer
-corner drags, 136 entering-Overview paints and 99 leaving-Overview paints,
-same-frame shadow geometry, positive shadow pixels on all four sides in all six
-floating/maximized X11 SSD, X11 CSD and Wayland CSD previews, and full teardown.
-Desktop test strips darkened by 8.50-11.95 RGB levels, versus 29.79-40.81 in
-revision 3. Evidence and the previous installed files are saved at:
-`/home/abdallah-shehawey/.local/state/rounded-corners/revision4-7S2MpW`.
+- 107 functional checks: 12 real pointer drags on the curved corners, titlebar
+  interior input, maximize/fullscreen/minimize and back, Overview entry with
+  floating and maximized windows, the close fade, full teardown and re-enable.
+- Shadow profile against the real libadwaita window, per pixel from the edge:
+  default 22.0 15.4 13.5 11.1 9.5 7.9 6.6 5.4 4.6 3.8 3.2 2.7 1.9 1.4 1.1%,
+  revision 6 21.6 15.7 13.5 11.5 9.5 7.9 6.6 5.4 4.6 3.8 3.2 2.7 1.9 1.4 1.1%.
+- Opening animation, slowed 10x: the shadow grows with the window, exactly as
+  with the extension disabled (revision 5 showed the full shadow first).
+- 125%, 150% and 200% scale: exact masks (revision 5's mask assumed 100%).
+- gnome-shell CPU against the extension disabled (six windows, one redrawing):
+  Overview open/close +3% (revision 5: +19%), window drag +2% (+46%), idle with
+  one window redrawing at 165Hz +21% (+52%).
 
-Revision 5 passed 67 checks in an isolated GNOME 50.5 Wayland compositor on
-2026-10-09: 12 native curved-corner drags, X11 SSD/CSD and Wayland CSD resize,
-restore/minimize/fullscreen transitions, 135 entering and 98 leaving Overview
-paints, unchanged subtle shadows on all four sides, live updates in a minimized
-preview, retained close requests, successive close fades and full teardown.
-Shared sticky previews, enabling/disabling inside Overview and five interrupted
-open/close cycles also passed with zero leaked source-preview links.
+Tests, measurements, screenshots and the revision 5 files are under
+`~/.local/state/rounded-corners/revision6-*`.
 
-Repeated QHD 2560x1440 / 165Hz tests with six 1600x1000 clients compared disabled,
-revision 4 and revision 5 in alternating blocks. With the existing user's 0.8
-animation factor, median paint CPU was 0.812 / 5.793 / 0.923ms; median paint
-interval was 6.054 / 7.644 / 6.023ms and its 95th percentile 6.598 / 16.549 /
-6.523ms. Opening/closing duration was approximately 203ms with both revision 5
-and the extension disabled. An independent run gave 0.927 / 6.577 / 0.986ms
-paint CPU with the same duration. These are private compositor paint timings,
-not physical presentation FPS or a guarantee with all other enabled extensions.
-Functional screenshots, tests, measurements and the previous installed files:
-`/home/abdallah-shehawey/.local/state/rounded-corners/revision5-j9QjBU`.
+## Activation
 
-The existing real session still has revision 4 cached. GNOME Shell 50's public
-ReloadExtension method is deprecated and returns NOT_SUPPORTED. Disabling and
-enabling does not reimport edited JavaScript. Log out and log back in once to
-load revision 5; no session logout is performed automatically. Actual smoothness
-with the user's other enabled extensions remains to be confirmed after login.
-Fresh activation logs: "Rounded Corners Light revision 5 loaded".
+GNOME Shell imports an extension's code once per session: disabling and
+enabling does not load edited code. Log out and back in once; the journal then
+shows "Rounded Corners Light revision 6 loaded".
 
 Disable with: `gnome-extensions disable rounded-corners-light@local`.

@@ -1,9 +1,9 @@
 {
   "uuid": "rounded-corners-light@local",
   "name": "Rounded Corners Light",
-  "description": "Cached rounded windows and live Overview previews with native animation timing, subtle continuous shadows, curved resize grips and safe size transitions.",
+  "description": "Rounded windows and Overview previews with GNOME's own default shadow drawn inside each window, native animation timing, curved resize grips and safe size transitions.",
   "shell-version": [
     "50"
   ],
-  "version": 5
+  "version": 6
 }

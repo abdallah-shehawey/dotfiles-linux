@@ -32,8 +32,9 @@ Quit Zen completely, then:
 ./install.sh
 ```
 
-It writes exactly two files into the profile and backs up anything already
-there:
+With no argument it picks the profile Zen used last (the newest `prefs.js`
+under `~/.zen`); pass a profile path to choose another. It writes exactly two
+files into the profile and backs up anything already there:
 
 | file | what it does |
 |---|---|

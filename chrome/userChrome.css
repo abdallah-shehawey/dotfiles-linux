@@ -1294,14 +1294,68 @@ zen-library {
   }
 }
 
-/* the box itself: a floating card, not a flat rectangle */
+/* the box itself: a floating card, not a flat rectangle.
+
+   OPAQUE, and the backdrop-filter is gone. On 1.23b Zen's acrylic
+   (zen.theme.acrylic-elements, on by default) painted this card
+   rgba(20, 20, 20, 0.92) and handed the remaining 8% to
+   `backdrop-filter: var(--zen-backdrop-underlay) blur(40px)`, and that
+   filter did NOTHING. Measured over a page of 40px black/white stripes,
+   sampling a column inside the card away from any text (1.23b, window
+   1600x1000, card 868x328 at 366,334):
+
+     backdrop-filter: none          spread 20 / 255
+     backdrop-filter: blur(24px)    spread 20      <- what was here
+     backdrop-filter: blur(40px)    spread 20      <- Zen's own
+     backdrop-filter: blur(100px)   spread 20
+     backdrop-filter: invert(1)     spread 20      <- not a filter at all
+     background alpha .97           spread  8
+     background opaque              spread  0
+
+   Five filters that cannot be told apart is a filter that never ran: the
+   page behind came through at full contrast, hard edges and all, which is
+   the band you can see sitting behind the search box on any page that has a
+   light block in the middle. This note used to blame the top layer for that
+   (the floating bar is `popover=manual`). That was never shown - those
+   numbers come from a HEADLESS window, which renders in software
+   WebRender, and 1.23.2b's own ZenUIManager._markAcrylicSupport says
+   software WebRender cannot filter the web content behind the chrome at
+   all. What a GPU window does with the filter was not measured. An opaque
+   card leaves nothing to show through either way.
+
+   So the alpha goes instead. --zen-urlbar-background-base is Zen's own
+   opaque pair (white / rgb(24 24 24)) and is defined on this element by
+   #urlbar[breakout-extend], which the floating state always carries.
+
+   The outline goes with it: Zen puts `outline: 1px solid rgb(75, 75, 75)` at
+   outline-offset -1px on this box, so with the 1px border below it the card
+   had TWO hairlines - and the outline's corners resolve at 16-1 = 15px radius
+   against the border's 16px, so they part company at every corner.
+
+   1.23.2b (2026-10-09) took the acrylic off by default: the pref is now
+   zen.theme.acrylic-urlbar, a static one that is only on for Twilight
+   builds, and Zen also stamps [zen-no-acrylic] on a window drawn in
+   software. On a release build Zen's own card is already opaque, so the
+   band only comes back if that pref is turned on. The outline is still
+   drawn. Same stripes, 1.23.2b, 2560x1440, dark / light:
+
+                                      background             outline   spread
+     without this rule, acrylic off   rgb(24, 24, 24)        1px        0 / 0
+     without this rule, acrylic on    rgba(20, 20, 20, .92)  1px       20 / 18
+     with it, acrylic off             rgb(24, 24, 24)        none       0 / 0
+     with it, acrylic on              rgb(24, 24, 24)        none       0 / 0
+
+   ("acrylic on" = the pref set and [zen-no-acrylic] removed by hand, since
+   the measuring window is a software one.) */
 #urlbar[zen-floating-urlbar="true"][open] > .urlbar-background {
   border-radius: 16px !important;
   border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+  background-color: var(--zen-urlbar-background-base) !important;
+  outline: none !important;
   box-shadow:
     0 24px 48px -14px rgba(0, 0, 0, 0.5),
     0 6px 18px -8px rgba(0, 0, 0, 0.38) !important;
-  backdrop-filter: blur(24px) saturate(140%) !important;
+  backdrop-filter: none !important;
 }
 
 /* the input line and the results are separated by a hairline instead of a gap */

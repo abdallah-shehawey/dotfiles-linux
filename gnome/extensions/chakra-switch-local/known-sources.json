@@ -1,0 +1,48 @@
+{
+  "org.gnome.shell.extensions.chakra-switch.gschema.xml": {
+    "snapshot": "chakra-switch.gschema.local.xml",
+    "path": "schemas/org.gnome.shell.extensions.chakra-switch.gschema.xml",
+    "accepted": [
+      "59e4c8bb20a3335e5ee6b68a0c65d857892edb85d781a304e5a7e9e9f556db8c"
+    ]
+  },
+  "ChakraSwitcher.js": {
+    "snapshot": "ChakraSwitcher.local.js",
+    "accepted": [
+      "d4352dfb80b3820dab24ae0dcd126013560bc23f3cf7fa7becf1fd5086f33e7a",
+      "427c890673092241f4690ea11d2105628d82b577dc7c773e7a1bf685e21a21de"
+    ]
+  },
+  "PeekView.js": {
+    "snapshot": "PeekView.coverflow.js",
+    "accepted": [
+      "277968ce61226697e8ada92e1304ffc422ed11e0ed6d11a738e4e8c85eda65f8",
+      "9f286ab79e15099d19f000b8ffb0b98d6b7dd2d8f93875380aa95892433d3e93",
+      "6b9fa60777aa8bc030b53dc375d2b437e868eca704109e74428997358c5ee63b"
+    ]
+  },
+  "extension.js": {
+    "snapshot": "extension.local.js",
+    "path": "extension.js",
+    "needs": "org.gnome.shell.extensions.chakra-switch.gschema.xml",
+    "accepted": [
+      "831f6da08cea0bc841e6c940fd44ada3443e6962cdbcc75a958efaf948bb490e",
+      "5acdf65013019d4c2e17518c5d549ba07cc240c302859b6947230fb9bc4dd02b"
+    ]
+  },
+  "prefs.js": {
+    "snapshot": "prefs.local.js",
+    "path": "prefs.js",
+    "needs": "org.gnome.shell.extensions.chakra-switch.gschema.xml",
+    "accepted": [
+      "6044dbbd0d1b7041145953362fa6f30ceb9caedfc2d13757e22988c1a65f8430"
+    ]
+  },
+  "DiagonalBlade.js": {
+    "snapshot": "DiagonalBlade.carousel.js",
+    "accepted": [
+      "060f033012faeb953dfad5e49c8ab160f132ae2dbb2f480f76c029029fc24fb6",
+      "060f033012faeb953dfad5e49c8ab160f132ae2dbb2f480f76c029029fc24fb6"
+    ]
+  }
+}

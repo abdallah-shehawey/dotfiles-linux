@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch Chakra Switch for updates that would drop the local fixes
+
+[Path]
+# An update replaces the whole extension directory, metadata.json included,
+# so one watch catches it. Each PathChanged= line costs its own inotify
+# instance, and this account runs at the 128-instance limit.
+PathChanged=%h/.local/share/gnome-shell/extensions/chakra-switch@narkagni/metadata.json
+Unit=chakra-switch-repatch.service
+
+[Install]
+WantedBy=default.target

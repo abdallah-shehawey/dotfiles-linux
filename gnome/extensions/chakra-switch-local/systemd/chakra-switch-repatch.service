@@ -1,0 +1,8 @@
+[Unit]
+Description=Re-apply local Chakra Switch fixes
+
+[Service]
+Type=oneshot
+# let an extension update finish writing before touching the file
+ExecStartPre=/usr/bin/sleep 10
+ExecStart=%h/.local/share/chakra-switch-local/apply.py

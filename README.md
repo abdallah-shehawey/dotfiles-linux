@@ -18,6 +18,8 @@ vertical sidebar. Tested on Zen 1.21.15b and 1.23b (Linux).
 * a **"+"** sits after the last tab
 * Ctrl+T's floating search box **fades and scales in**, its results fan in behind it
 * a **private window is violet**, not the same black as a normal one
+* a **new window starts empty** and keeps its own tabs - only pinned tabs are
+  shared between windows
 * one motion system: tabs grow and collapse on a single curve, the current
   tab's title slides in, buttons answer a press, split panes ease
 * window buttons, app menu, downloads all keep working
@@ -99,6 +101,7 @@ Edit, save, restart Zen.
 | `zen.view.compact.enable-at-startup=false` | compact mode stays off (see below) |
 | `toolkit.cosmeticAnimations.enabled=true` | tabs slide open and closed |
 | `zen.ctrlTab.show-pending-tabs=true` | a tab that has not loaded yet still counts in the Ctrl+Tab switcher |
+| `zen.window-sync.sync-only-pinned-tabs=true` | a new window starts empty and keeps its own tabs (see below) |
 
 **The trade-off:** Zen ties the floating Ctrl+T box and the startup screen to
 the *same* pref (`ZenSpaceManager.selectStartPage`). With
@@ -368,6 +371,29 @@ the template's `orient="vertical"`. The sideways `writing-mode: vertical-lr`
 that makes the vertical strip run horizontally then turned that already-horizontal
 row into a column, and every tab landed one full row *below* the toolbar. The
 rule is now scoped to `[orient="vertical"]`.
+
+## Each window keeps its own tabs
+
+Zen syncs every normal window (`zen.window-sync.enabled`, on by default):
+Ctrl+N opens a copy of the windows already open, and a tab opened, closed or
+moved in one is opened, closed or moved in all of them. `user.js` sets
+`zen.window-sync.sync-only-pinned-tabs`, the "Sync only pinned tabs in
+workspaces" checkbox in Settings, so only pinned tabs and the spaces are
+shared. Measured on 1.23.2b, two tabs open in the first window:
+
+| | Zen's default | with the pref |
+|---|---|---|
+| Ctrl+N | the new window holds both tabs, same ids | one empty tab, the start page with the search box open |
+| a tab opened in the new window | appears in the first one too | stays where it was opened |
+| a tab closed in the first window | closes in both | the new one does not notice |
+| a tab pinned in either window | shared | still shared |
+| a closed window | - | Ctrl+Shift+T brings it back with its tabs |
+| quit with two windows, start again | one fresh window | one fresh window (`browser.startup.page=1`) |
+
+Ctrl+Shift+N ("New Blank Window") is something else: an *unsynced* window,
+which Zen tints blue and leaves out of the sync entirely, pinned tabs
+included. The layout holds in it too, but it is not what Ctrl+N gives you
+now.
 
 ## Compact mode is off
 

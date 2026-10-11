@@ -45,6 +45,18 @@ user_pref("zen.ctrlTab.show-pending-tabs", true);
 // and ships it display:none otherwise.
 user_pref("zen.tabs.show-newtab-vertical", true);
 
+// A new window starts empty and keeps its own tabs. Zen syncs every normal
+// window by default (zen.window-sync.enabled): Ctrl+N opens a copy of the
+// windows already open, and a tab opened, closed or moved in one of them is
+// opened, closed or moved in all of them. This keeps that for PINNED tabs
+// only (and the spaces list); every other tab belongs to the window it was
+// opened in. It is the checkbox in Settings > Tab Management > Workspaces,
+// "Sync only pinned tabs in workspaces". Measured on 1.23.2b: the new window
+// holds one empty tab and the old one keeps all of its own; a tab opened or
+// closed in either leaves the other alone; a tab pinned in one still appears
+// in both. Ctrl+Shift+T brings a closed window back with its tabs.
+user_pref("zen.window-sync.sync-only-pinned-tabs", true);
+
 // The bookmarks strip only on the new-tab page (Firefox's own setting).
 user_pref("browser.toolbars.bookmarks.visibility", "newtab");
 // The downloads button appears on the first download and leaves again.

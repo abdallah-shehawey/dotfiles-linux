@@ -1,7 +1,7 @@
 # Zen horizontal tabs
 
 Zen Browser with the tabs on the **same row as the address bar** instead of the
-vertical sidebar. Tested on Zen 1.21.15b and 1.23b (Linux).
+vertical sidebar. Tested on Zen 1.21.15b, 1.23b and 1.23.2b (Linux).
 
 ![row](docs/row.png)
 
@@ -435,3 +435,16 @@ Not checked on this build: the Ctrl+Tab switcher. Its popup is sized and
 centred from `screen.availWidth`, not the window, so a headless run measures
 it against a 1366px virtual screen and the numbers mean nothing - it has to
 be looked at in a real window.
+
+### What 1.23.2b changed (2026-10-11)
+
+Re-measured end to end on the new build: the row, the tab widths, the
+Library, the bookmarks strip and private and blank windows all came out on
+the same numbers as 1.23b (the strip still starts at x=420 and ends at 2368).
+Three things did not:
+
+| what | what it did | the rule |
+|---|---|---|
+| Zen hides a tab's X with `visibility: collapse` now, not `display: none` | a collapsed flex item gives up its width: the title jumped 20px (78.7 -> 58.7px) under the pointer, and the current tab lost its X | `visibility: visible` on the X |
+| the download stack under the Library button | 28px wide - the button's width - so the cards were empty pills; with no background they sat straight on the page; and Zen masks the tab strip from the bottom by the stack's height while it is open, which here took **every tab and the "+" off the row** for as long as the pointer was on the button. That one dates from 1.23b and only shows with real downloads and a real hover. 1.23.2b then moved the cards' entrance onto `transform`, which turned the old offset into a constant -25px: the open cards sat inside the row | a 300px column right-aligned under the button, cards in the theme's panel colour, no mask on the strip, the entrance rewritten (`--ctab-dl` sets the width) |
+| `zen.theme.acrylic-elements` became `zen.theme.acrylic-urlbar`, off on release builds | Zen's floating Ctrl+T box is opaque by default now, but it still draws the outline that doubled its border, and with the acrylic on the page shows through again (stripe spread 20) | the opaque card stays, as a guard; its note now says what was and was not measured |

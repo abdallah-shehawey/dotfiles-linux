@@ -61,6 +61,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
   --ctab-left: 128px;    /* back / forward / reload / home + their separator */
   --ctab-foot: 34px;     /* the downloads button at the far end of the row */
+  --ctab-dl: 300px;      /* the download stack that hangs under that button */
   --ctab-gap: 8px;       /* room on each side of the address box */
   --ctab-private: 128, 116, 255;  /* the private-window accent, as R, G, B */
 

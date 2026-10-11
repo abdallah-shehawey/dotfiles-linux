@@ -19,6 +19,7 @@
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-left: 128px;    /* back / forward / reload / home + their separator */
   --ctab-foot: 34px;     /* the downloads button, at the far end of the row */
+  --ctab-dl: 300px;      /* the download stack that hangs under that button */
   --ctab-url: 280px;     /* width of the address box */
   /* Everything in the row that is NOT tabs. The tab strip cannot be sized in
      percentages (see the cap on .zen-workspace-normal-tabs-section), so it is
@@ -1138,16 +1139,65 @@ zen-library {
    instead: top:100% puts the list at the row's lower edge, column-reverse
    keeps the newest card nearest the button the way it was, and the
    entrance that slid the cards up by 25px drops them in by 25px so the
-   motion still comes from the button. */
+   motion still comes from the button.
+
+   That fixed the direction and missed three things. They only show with
+   real downloads and a real pointer on the button - the numbers above came
+   from setting the attribute by hand, which is not all a hover does.
+   Measured on 1.23.2b at 2560x1440, four downloads:
+
+     width     the list is `width: 100%` of #zen-sidebar-foot-buttons -
+               beside a sidebar that is the sidebar, here it is the 28px
+               button. Four 28x52 cards with a title column 0px wide: a grey
+               pill with nothing in it.
+     backdrop  a card has no background until it is hovered. Beside a
+               sidebar it sits on the sidebar; here it sits on the page.
+     the tabs  the widget also stamps [zen-library-stack-open] on
+               #TabsToolbar-customization-target, and zen-single-components
+               masks that box from the bottom by the stack's height so the
+               end of a vertical tab list fades out under the cards. Here
+               that box IS the tab strip, 30px tall, and the mask came out
+               calc(100% - 215px): every tab and the "+" were gone for as
+               long as the pointer stayed on the button.
+
+   1.23.2b also changed how the cards move. They now transition `transform`
+   from translateY(25px) to translateY(0) themselves, and
+   --zen-library-progress moved onto the button's badge - so on a card it is
+   the registered initial value, 0, and the old
+   translateY(calc((1 - progress) * -25px)) here was a constant -25px. The
+   open cards measured y=17.5..237.5 instead of 42.5..262.5, the newest one
+   24.5px up inside the 42px row.
+
+   So the stack is a column of its own width, right-aligned under the
+   button, each card a floating chip in the theme's panel colour (the
+   variable the menus are painted with, so a theme change carries it), the
+   strip is never masked, and the entrance is written the way 1.23.2b
+   writes it: 25px above, falling into place. Zen's own transition on
+   `transform` and `opacity`, stagger included, is left to run it. */
 #zen-library-download-list {
   top: 100% !important;
   bottom: auto !important;
+  left: auto !important;
+  right: 0 !important;
+  width: var(--ctab-dl) !important;
   flex-direction: column-reverse !important;
-  padding-top: 10px !important;
+  padding-top: 12px !important;
 }
 .zen-library-download-list-download {
-  transform: translateY(calc((1 - var(--zen-library-progress)) * -25px)) !important;
+  background: var(--arrowpanel-background) !important;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+  box-shadow:
+    0 10px 24px -10px rgba(0, 0, 0, 0.5),
+    0 2px 8px -4px rgba(0, 0, 0, 0.35) !important;
+  transform: translateY(-25px) !important;
 }
+.zen-library-download-list-download:hover {
+  background: color-mix(in srgb, var(--arrowpanel-background), currentColor 8%) !important;
+}
+#zen-sidebar-foot-buttons[zen-library-stack-open] .zen-library-download-list-download {
+  transform: none !important;
+}
+#TabsToolbar-customization-target { mask-image: none !important; }
 
 /* ---- window buttons stay top-right ---- */
 :root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-wrapper {

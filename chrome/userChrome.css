@@ -725,9 +725,25 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    while it is invisible, so a click on that corner still selects the tab.
 
    A pinned chip carries none at all: at 38px the button IS the whole chip and
-   every click would close the tab instead of opening it. */
+   every click would close the tab instead of opening it.
+
+   Zen 1.23.2b moved its own show/hide of the X from `display` to
+   `visibility`: vertical-tabs.css now gives every tab's X
+   `visibility: collapse` and only `visible` under :hover. A collapsed flex
+   item gives up its width, so that undid both halves of this rule. Measured
+   at 2560px, a 120px open tab and the 220px current one:
+
+                           X       title
+     open tab, away        4px     78.7px    collapsed
+     open tab, hovered     18px    58.7px    <- the title jumps 20px
+     current tab, away     4px     collapsed: no X until the pointer lands
+
+   `visibility: visible` here puts both back: 18px on every open tab with
+   the pointer on it or not (the title 58.7px both ways), and the current
+   tab shows its X again, as in docs/row.png. */
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-close-button {
   display: flex !important;
+  visibility: visible !important;
   flex: 0 0 auto !important;
   width: 18px !important;
   height: 18px !important;
@@ -746,7 +762,7 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   display: none !important;
 }
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-icon-stack { visibility: visible !important; }
-.tabbrowser-tab:is([selected], [visuallyselected]) .tab-close-button { display: block !important; }
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-close-button { display: block !important; visibility: visible !important; }
 
 /* ---- hovering a pinned chip opens a small preview of it ----
    the chip widens to the width of an open tab, with the page title and an X,

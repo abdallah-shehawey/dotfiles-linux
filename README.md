@@ -447,4 +447,12 @@ Three things did not:
 |---|---|---|
 | Zen hides a tab's X with `visibility: collapse` now, not `display: none` | a collapsed flex item gives up its width: the title jumped 20px (78.7 -> 58.7px) under the pointer, and the current tab lost its X | `visibility: visible` on the X |
 | the download stack under the Library button | 28px wide - the button's width - so the cards were empty pills; with no background they sat straight on the page; and Zen masks the tab strip from the bottom by the stack's height while it is open, which here took **every tab and the "+" off the row** for as long as the pointer was on the button. That one dates from 1.23b and only shows with real downloads and a real hover. 1.23.2b then moved the cards' entrance onto `transform`, which turned the old offset into a constant -25px: the open cards sat inside the row | a 300px column right-aligned under the button, cards in the theme's panel colour, no mask on the strip, the entrance rewritten (`--ctab-dl` sets the width) |
-| `zen.theme.acrylic-elements` became `zen.theme.acrylic-urlbar`, off on release builds | Zen's floating Ctrl+T box is opaque by default now, but it still draws the outline that doubled its border, and with the acrylic on the page shows through again (stripe spread 20) | the opaque card stays, as a guard; its note now says what was and was not measured |
+| `zen.theme.acrylic-elements` became `zen.theme.acrylic-urlbar`, off on release builds | Zen's floating Ctrl+T box is opaque by default now, but it still draws the outline that doubled its border, and with the acrylic on the page shows through again: stripe spread 20 in a software window, a blurred 5 on the GPU | the opaque card stays, as a guard (spread 0 in both); its note no longer blames the top layer - in a GPU window the blur runs |
+
+The Ctrl+Tab switcher and the window buttons were checked in a real window
+this time: Zen run inside a nested headless GNOME Shell at 2560x1440@165,
+scale 1 - the owner's panel - so `screen.availWidth` is the real 2560 and
+the titlebar is drawn. Four cards at 371px and seven at 348px, one row,
+centred to within 3px, none clipped by the popup; minimise / maximise /
+close at x=2445..2560 inside the 158px kept for them, each the element under
+its own centre, with the app menu at 2410 clear of them.

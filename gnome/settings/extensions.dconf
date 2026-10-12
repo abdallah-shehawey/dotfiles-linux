@@ -1,0 +1,280 @@
+[app-grid-tuner]
+appgrid-icon-size=100
+folder-icon-size=100
+reload-signal=false
+
+[appindicator]
+icon-brightness=0.0
+icon-contrast=0.0
+icon-opacity=240
+icon-saturation=0.0
+icon-size=0
+legacy-tray-enabled=true
+tray-pos='right'
+
+[blur-my-shell]
+rounded-blur-found=true
+settings-version=2
+
+[blur-my-shell/appfolder]
+brightness=0.59999999999999998
+sigma=30
+
+[blur-my-shell/applications]
+blur=false
+brightness=1.0
+dynamic-opacity=true
+enable-all=true
+opacity=224
+pipeline='pipeline_default'
+sigma=100
+unblur-when-fullscreen=false
+
+[blur-my-shell/coverflow-alt-tab]
+pipeline='pipeline_default'
+
+[blur-my-shell/dash-to-dock]
+blur=true
+brightness=0.59999999999999998
+pipeline='pipeline_default_rounded'
+sigma=30
+static-blur=true
+style-dash-to-dock=0
+
+[blur-my-shell/lockscreen]
+pipeline='pipeline_default'
+
+[blur-my-shell/overview]
+pipeline='pipeline_default'
+
+[blur-my-shell/panel]
+brightness=0.59999999999999998
+override-background-dynamically=true
+pipeline='pipeline_default'
+sigma=40
+static-blur=false
+
+[blur-my-shell/popup]
+pipeline='pipeline_default_rounded'
+
+[blur-my-shell/screenshot]
+pipeline='pipeline_default'
+
+[blur-my-shell/window-list]
+brightness=0.59999999999999998
+sigma=30
+
+[chakra-switch]
+card-gap=260
+card-opacity=100
+ease-duration-ms=100
+open-in-overview=false
+peek-hide-duration-ms=90
+peek-opacity=100
+peek-show-duration-ms=150
+skew=90
+stagger-gap-ms=25
+text-size=15
+
+[clipboard-indicator]
+cache-size=30
+display-mode=0
+history-size=150
+next-history-clear=-1
+paste-button=true
+paste-on-select=true
+preview-size=50
+toggle-menu=['<Super>v']
+topbar-preview-size=10
+
+[coverflowalttab]
+bind-to-switch-applications=true
+bind-to-switch-windows=true
+dim-factor=1.0
+easing-function='ease-linear'
+highlight-mouse-over=false
+icon-style='Attached'
+perspective-correction-method='Move Camera'
+prefs-default-height=866.0
+prefs-default-width=1071.0
+switch-application-behaves-like-switch-windows=false
+switch-per-monitor=true
+switcher-background-color=(1.0, 1.0, 1.0)
+tint-use-theme-color=true
+
+[dash-to-panel]
+animate-appicon-hover=true
+animate-appicon-hover-animation-convexity={'RIPPLE': 2.0, 'PLANK': 1.0, 'SIMPLE': 0.0}
+animate-appicon-hover-animation-extent={'RIPPLE': 4, 'PLANK': 4, 'SIMPLE': 1}
+animate-appicon-hover-animation-travel={'SIMPLE': 0.10000000000000001, 'RIPPLE': 0.40000000000000002, 'PLANK': 0.0}
+animate-appicon-hover-animation-type='SIMPLE'
+appicon-margin=0
+appicon-padding=0
+appicon-style='NORMAL'
+dot-position='BOTTOM'
+dot-style-focused='DOTS'
+dot-style-unfocused='DOTS'
+extension-version=74
+global-border-radius=1
+hotkeys-overlay-combo='TEMPORARILY'
+intellihide=false
+isolate-monitors=true
+isolate-workspaces=true
+leftbox-padding=-1
+multi-monitors=false
+panel-anchors='{"CSO-0x00000000":"MIDDLE","SEC-0x01010101":"MIDDLE"}'
+panel-element-positions='{"CSO-0x00000000":[{"element":"showAppsButton","visible":true,"position":"stackedTL"},{"element":"activitiesButton","visible":true,"position":"stackedTL"},{"element":"leftBox","visible":true,"position":"stackedTL"},{"element":"taskbar","visible":true,"position":"stackedTL"},{"element":"dateMenu","visible":true,"position":"centerMonitor"},{"element":"centerBox","visible":false,"position":"stackedBR"},{"element":"rightBox","visible":true,"position":"stackedBR"},{"element":"systemMenu","visible":true,"position":"stackedBR"},{"element":"desktopButton","visible":false,"position":"stackedBR"}],"SEC-0x01010101":[{"element":"showAppsButton","visible":true,"position":"stackedTL"},{"element":"activitiesButton","visible":false,"position":"stackedTL"},{"element":"leftBox","visible":true,"position":"stackedTL"},{"element":"taskbar","visible":true,"position":"stackedTL"},{"element":"dateMenu","visible":true,"position":"stackedBR"},{"element":"centerBox","visible":true,"position":"centered"},{"element":"rightBox","visible":true,"position":"stackedBR"},{"element":"systemMenu","visible":true,"position":"stackedBR"},{"element":"desktopButton","visible":true,"position":"stackedBR"}]}'
+panel-lengths='{}'
+panel-positions='{"CSO-0x00000000":"TOP","SEC-0x01010101":"TOP"}'
+panel-sizes='{"CSO-0x00000000":30}'
+prefs-opened=false
+primary-monitor='CSO-0x00000000'
+show-apps-icon-file='/home/abdallah-shehawey/.icons/fedora-logo-symbolic.svg'
+show-apps-icon-side-padding=5
+show-apps-override-escape=true
+show-window-previews=true
+show-window-previews-timeout=500
+status-icon-padding=-1
+taskbar-locked=false
+trans-dynamic-anim-target=1.0
+trans-dynamic-distance=10
+trans-panel-opacity=0.0
+trans-use-custom-opacity=true
+trans-use-dynamic-opacity=true
+tray-padding=-1
+window-preview-hide-immediate-click=true
+window-preview-padding=8
+window-preview-title-position='TOP'
+
+[just-perfection]
+accent-color-icon=false
+accessibility-menu=true
+activities-button=true
+animation=1
+background-menu=true
+clock-menu=true
+dash=false
+dash-app-running=true
+dash-icon-size=0
+dash-separator=false
+invert-calendar-column-items=false
+keyboard-layout=true
+max-displayed-search-results=0
+panel=true
+panel-button-padding-size=5
+panel-icon-size=0
+panel-in-overview=true
+panel-indicator-padding-size=0
+panel-notification-icon=true
+panel-size=0
+power-icon=true
+quick-settings=true
+quick-settings-backlight=false
+quick-settings-dark-mode=false
+quick-settings-night-light=false
+ripple-box=true
+screen-recording-indicator=true
+screen-sharing-indicator=true
+search=true
+show-apps-button=true
+startup-status=0
+support-notifier-type=0
+theme=false
+window-demands-attention-focus=false
+window-maximized-on-create=false
+window-menu=true
+window-menu-take-screenshot-button=true
+window-picker-icon=true
+window-preview-close-button=true
+workspace=true
+workspace-peek=true
+workspace-popup=true
+workspace-switcher-should-show=true
+workspace-thumbnail-to-main-view=false
+workspace-wrap-around=false
+workspaces-in-app-grid=true
+world-clock=true
+
+[runcat]
+custom-system-monitor-enabled=false
+displaying-items='character-only'
+idle-threshold=0
+invert-speed=false
+
+[status-area-horizontal-spacing]
+hpadding=6
+
+[system-monitor]
+show-cpu=false
+show-download=true
+show-memory=true
+show-swap=false
+show-upload=true
+
+[tiling-assistant]
+activate-layout0=@as []
+activate-layout1=@as []
+activate-layout2=@as []
+activate-layout3=@as []
+auto-tile=@as []
+center-window=@as []
+debugging-free-rects=@as []
+debugging-show-tiled-rects=@as []
+default-move-mode=0
+dynamic-keybinding-behavior=0
+enable-tiling-popup=true
+focus-hint=0
+focus-hint-color='rgb(53,132,228)'
+import-layout-examples=false
+last-version-installed=56
+maximize-with-gap=true
+overridden-settings={'org.gnome.mutter.edge-tiling': <@mb nothing>, 'org.gnome.desktop.wm.keybindings.maximize': <@mb nothing>}
+restore-window=['<Super>Down']
+search-popup-layout=@as []
+single-screen-gap=0
+tile-bottom-half=['<Super>KP_2']
+tile-bottom-half-ignore-ta=@as []
+tile-bottomleft-quarter=['<Super>KP_1']
+tile-bottomleft-quarter-ignore-ta=@as []
+tile-bottomright-quarter=['<Super>KP_3']
+tile-bottomright-quarter-ignore-ta=@as []
+tile-edit-mode=@as []
+tile-left-half=['<Super>Left', '<Super>KP_4']
+tile-left-half-ignore-ta=@as []
+tile-maximize=['<Super>Up', '<Super>KP_5']
+tile-maximize-horizontally=@as []
+tile-maximize-vertically=@as []
+tile-right-half=['<Super>Right', '<Super>KP_6']
+tile-right-half-ignore-ta=@as []
+tile-top-half=['<Super>KP_8']
+tile-top-half-ignore-ta=@as []
+tile-topleft-quarter=['<Super>KP_7']
+tile-topleft-quarter-ignore-ta=@as []
+tile-topright-quarter=['<Super>KP_9']
+tile-topright-quarter-ignore-ta=@as []
+tiling-popup-all-workspace=false
+toggle-always-on-top=@as []
+toggle-tiling-popup=@as []
+window-gap=0
+
+[unlock-dialog-background]
+picture-uri='/home/abdallah-shehawey/Pictures/Naruto.jpg'
+picture-uri-dark='/home/abdallah-shehawey/Pictures/Naruto.jpg'
+
+[vitals]
+alphabetize=true
+fan-colors=@as []
+fixed-widths=true
+hide-icons=false
+hide-zeros=true
+hot-sensors=['__temperature_avg__', '_gpu#1_temperature_', '_gpu#1_utilization_']
+icon-style=1
+menu-centered=true
+position-in-panel=0
+show-battery=true
+show-gpu=true
+show-sensor-history-graph=true
+show-storage=true
+storage-measurement=1
+update-time=2
+use-higher-precision=false

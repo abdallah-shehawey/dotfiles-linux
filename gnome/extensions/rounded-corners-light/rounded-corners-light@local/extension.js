@@ -6,6 +6,7 @@ import Graphene from 'gi://Graphene';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
+import System from 'system';
 import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {WindowPreview} from 'resource:///org/gnome/shell/ui/windowPreview.js';
@@ -30,6 +31,12 @@ const SHADOW_RING = 0.05;
 // The focused profile is below 1/512 beyond 24px.
 const SHADOW_EXTENT = 24;
 const FOCUS_TRANSITION_MS = 200;
+// Clutter frees an offscreen effect's framebuffer, and GNOME's window
+// snapshots, only when their JS wrapper is finalized. Collect once this much
+// has been dropped, at a quiet moment, instead of whenever SpiderMonkey's own
+// heap growth happens to trigger it (hours later, gigabytes later).
+const GARBAGE_GC_BYTES = 128 * 1024 * 1024;
+const GARBAGE_GC_DELAY_MS = 1500;
 
 const MODE_PASS = 0;
 const MODE_CLIP = 1;
@@ -82,13 +89,26 @@ function fboBox(x1, y1, x2, y2) {
     return [right - width - 3, bottom - height - 3, width + 3, height + 3];
 }
 
+// Mutter does not export MetaSurfaceActor to GI; compare GTypes instead.
+const SURFACE_ACTOR = GObject.type_from_name('MetaSurfaceActor');
+
+function x11Surface(actor) {
+    // An X11 window draws through its surface actor. Other extensions add
+    // children of their own (Blur My Shell's application blur does), so the
+    // first child is not necessarily the surface.
+    if (!SURFACE_ACTOR)
+        return actor.get_first_child();
+    return actor.get_children().find(child =>
+        GObject.type_is_a(child.constructor.$gtype, SURFACE_ACTOR)) ?? null;
+}
+
 function shadowProfile(focus) {
     const mix = (a, b) => a + (b - a) * focus;
     return SHADOW_BACKDROP.map((backdrop, i) =>
         backdrop.map((value, j) => mix(value, SHADOW_FOCUSED[i][j])));
 }
 
-const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV6'},
+const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV7'},
 class CornerGrip extends Clutter.Actor {
     _init(window, corner) {
         const cursors = [Clutter.CursorType.NW_RESIZE, Clutter.CursorType.NE_RESIZE,
@@ -148,7 +168,7 @@ class CornerGrip extends Clutter.Actor {
     }
 });
 
-const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV6'},
+const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV7'},
 class CornerEffect extends Shell.GLSLEffect {
     _init() {
         super._init();
@@ -186,9 +206,13 @@ class CornerEffect extends Shell.GLSLEffect {
     }
 
     vfunc_paint_target(node, context) {
-        const texture = this.get_texture();
-        if (texture)
-            this._update(texture.get_width(), texture.get_height());
+        // Read the framebuffer size, never the texture itself: a JS wrapper
+        // keeps every framebuffer Clutter replaces (each resize step, each
+        // Overview entry) alive until the next garbage collection. Revision 6
+        // held gigabytes of them that way.
+        const [ok, width, height] = this.get_target_size();
+        if (ok && width > 0 && height > 0)
+            this._update(width, height);
         else
             this._pass();
         super.vfunc_paint_target(node, context);
@@ -273,7 +297,7 @@ class CornerEffect extends Shell.GLSLEffect {
     }
 });
 
-const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV6'},
+const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV7'},
 class PreviewContextEffect extends Clutter.Effect {
     _init(source, previewActor) {
         super._init();
@@ -307,6 +331,8 @@ export default class RoundedCornersLight extends Extension {
         this._connections = [];
         this._pendingClose = new Map();
         this._closeGhosts = new Set();
+        this._garbage = 0;
+        this._gcSource = 0;
         this._inOverview = Main.overview.visible;
         this._animating = Main.overview.animationInProgress;
         this._injections = new InjectionManager();
@@ -337,6 +363,15 @@ export default class RoundedCornersLight extends Extension {
                 }
             });
         }
+        // That snapshot is a window-sized texture which only a garbage
+        // collection releases; count it once GNOME has dropped it.
+        this._injections.overrideMethod(Main.wm, '_clearAnimationInfo', original => function (actor) {
+            const content = actor.__animationInfo?.clone?.content ?? null;
+            const cleared = original.call(this, actor);
+            if (cleared)
+                extension._noteGarbage(content);
+            return cleared;
+        });
         this._injections.overrideMethod(WindowPreview.prototype, '_deleteAll', original => function (...args) {
             try {
                 extension._captureClose(this);
@@ -400,7 +435,7 @@ export default class RoundedCornersLight extends Extension {
         });
         for (const actor of global.get_window_actors())
             this._trackWindow(actor);
-        console.log('Rounded Corners Light revision 6 loaded (in-window default shadow)');
+        console.log('Rounded Corners Light revision 7 loaded (in-window default shadow)');
     }
 
     _connect(object, signal, callback, connections = this._connections) {
@@ -440,6 +475,10 @@ export default class RoundedCornersLight extends Extension {
             record.timeline?.stop();
             record.timeline = null;
             this._windows.delete(actor);
+            // Its framebuffer now waits for the collector.
+            this._noteGarbage(record.effect);
+            record.effect = null;
+            record.target = null;
         }, record.connections);
         sync();
     }
@@ -472,19 +511,32 @@ export default class RoundedCornersLight extends Extension {
             !window.maximizedHorizontally && !window.maximizedVertically;
         const desktop = floating && !waitingForBuffer;
 
-        const target = record.x11 ? actor.get_first_child() : actor;
+        const target = record.x11 ? x11Surface(actor) : actor;
         if (!target || !(desktop || this._inOverview)) {
+            // Disabling keeps no buffer alive for long: Clutter 50 drops the
+            // framebuffer here and replaces the texture on the next enabled
+            // paint, freeing the old one at once (nothing in JS holds it).
             this._setChildren(record, false);
             record.effect?.set_enabled(false);
             return;
         }
         if (record.target !== target) {
-            if (record.effect)
-                record.target?.remove_effect(record.effect);
+            this._dropEffect(record);
             record.target = target;
             record.effect = new CornerEffect();
             record.effect.focus = record.focus;
             target.add_effect_with_name(EFFECT_NAME, record.effect);
+            // An X11 window can replace its surface actor; never touch the
+            // old one after Clutter destroyed it.
+            if (target !== actor) {
+                target.connect('destroy', () => {
+                    if (record.target === target) {
+                        this._noteGarbage(record.effect);
+                        record.target = null;
+                        record.effect = null;
+                    }
+                });
+            }
         }
 
         const frameRect = window.get_frame_rect();
@@ -502,6 +554,50 @@ export default class RoundedCornersLight extends Extension {
         record.effect.set_enabled(true);
     }
 
+    _dropEffect(record) {
+        const {effect, target} = record;
+        record.effect = null;
+        record.target = null;
+        if (!effect)
+            return;
+        this._noteGarbage(effect);
+        target?.remove_effect(effect);
+    }
+
+    _noteGarbage(item) {
+        // Count what is now waiting for the collector: an effect's
+        // framebuffer, or a snapshot's texture.
+        let bytes = 0;
+        if (item instanceof Clutter.OffscreenEffect) {
+            const [ok, width, height] = item.get_target_size();
+            if (ok)
+                bytes = width * height * 4;
+        } else if (item) {
+            const [ok, width, height] = item.get_preferred_size();
+            if (ok)
+                bytes = width * height * 4;
+        }
+        this._garbage += bytes;
+        if (this._garbage < GARBAGE_GC_BYTES || this._gcSource)
+            return;
+        this._gcSource = GLib.timeout_add(GLib.PRIORITY_LOW, GARBAGE_GC_DELAY_MS, () => {
+            // A full collection takes a few tens of milliseconds on the main
+            // thread: never during an animation, and while the user is busy
+            // only once a lot has piled up.
+            if (Main.overview.animationInProgress || Main.wm._resizing.size > 0 ||
+                Main.wm._mapping.size > 0 || Main.wm._destroying.size > 0 ||
+                this._closeGhosts.size > 0)
+                return GLib.SOURCE_CONTINUE;
+            const idleMs = global.backend.get_core_idle_monitor?.()?.get_idletime() ?? Infinity;
+            if (idleMs < GARBAGE_GC_DELAY_MS && this._garbage < 4 * GARBAGE_GC_BYTES)
+                return GLib.SOURCE_CONTINUE;
+            this._gcSource = 0;
+            this._garbage = 0;
+            System.gc();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     _prepareSnapshot(record, change) {
         // Mutter flags the new state before GNOME snapshots the old frame for
         // its size animation, while the actor still holds the old buffer.
@@ -514,7 +610,7 @@ export default class RoundedCornersLight extends Extension {
             return;
         }
         const last = record.lastFloating;
-        const target = record.x11 ? record.actor.get_first_child() : record.actor;
+        const target = record.x11 ? x11Surface(record.actor) : record.actor;
         if (!last || record.target !== target)
             return;
         const [width, height] = target.get_size();
@@ -698,10 +794,13 @@ export default class RoundedCornersLight extends Extension {
             this._forgetClose(pending);
             if (this._inOverview && !this._animating)
                 this._fadeClose(pending);
+            else
+                this._noteGarbage(pending.content);
         });
         pending.timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 10000, () => {
             pending.timeout = 0;
             this._forgetClose(pending);
+            this._noteGarbage(pending.content);
             return GLib.SOURCE_REMOVE;
         });
     }
@@ -733,20 +832,24 @@ export default class RoundedCornersLight extends Extension {
         ghost.ease({
             opacity: 0, scale_x: 0.96, scale_y: 0.96, duration: 180,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onStopped: () => {
-                if (this._closeGhosts.delete(ghost))
-                    ghost.destroy();
-            },
+            onStopped: () => this._destroyGhost(ghost),
         });
     }
 
+    _destroyGhost(ghost) {
+        if (!this._closeGhosts.delete(ghost))
+            return;
+        this._noteGarbage(ghost.content);
+        ghost.destroy();
+    }
+
     _clearCloseAnimations() {
-        for (const pending of this._pendingClose.values())
+        for (const pending of [...this._pendingClose.values()]) {
             this._forgetClose(pending);
-        for (const ghost of this._closeGhosts) {
-            this._closeGhosts.delete(ghost);
-            ghost.destroy();
+            this._noteGarbage(pending.content);
         }
+        for (const ghost of [...this._closeGhosts])
+            this._destroyGhost(ghost);
     }
 
     _roundThumbnail(actor) {
@@ -773,8 +876,7 @@ export default class RoundedCornersLight extends Extension {
         for (const record of this._windows.values()) {
             this._disconnect(record.connections);
             record.timeline?.stop();
-            if (record.effect)
-                record.target?.remove_effect(record.effect);
+            this._dropEffect(record);
             this._setChildren(record, false);
         }
         for (const record of this._previews.values()) {
@@ -797,5 +899,8 @@ export default class RoundedCornersLight extends Extension {
         this._windows.clear();
         this._previews.clear();
         this._injections = null;
+        if (this._gcSource)
+            GLib.source_remove(this._gcSource);
+        this._gcSource = 0;
     }
 }

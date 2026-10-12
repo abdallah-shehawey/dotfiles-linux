@@ -6,6 +6,37 @@ workspace thumbnails get 5px, matching the native 8px selection indicator with
 its 3px border. Maximized, tiled and fullscreen windows stay square on the
 desktop and are rounded only inside their Overview preview.
 
+## Revision 7 (2026-10-12)
+
+**Revision 6 leaked GPU memory until the next JavaScript garbage collection,
+which in a running session can be hours and gigabytes away.** Its corner
+effect read its framebuffer with `get_texture()` on every paint. The JS
+wrapper that call creates keeps the texture alive after Clutter replaces it,
+and Clutter replaces it on every size change and every time the effect is
+enabled again. One drag-resize left about 300MB behind, every Overview entry
+about 55MB (one full-screen buffer per maximized window). The live shell held
+10GB of such buffers after ten hours, 9.6GB of it pushed into swap, and the
+Overview opened slowly because the shell's own pages had been swapped out
+around them.
+
+- The effect reads the framebuffer size with `get_target_size()`, which hands
+  no texture to JS. A replaced framebuffer is freed immediately.
+- Clutter 50 frees an offscreen effect's texture only on reallocation or
+  finalization, and a paint_to_content() snapshot only on finalization:
+  `run_dispose()` frees neither. What only a collection can release (GNOME's
+  own size-change snapshot, the Overview close image, the buffer of a closed
+  window) is counted; past 128MB the extension runs one collection at the
+  next moment with no animation and no input for 1.5s, or past 512MB at the
+  next moment with no animation.
+- An X11 window's mask goes on its Mutter surface actor, found by type, not
+  on its first child: Blur My Shell's application blur inserts a child of its
+  own, and revision 6 then attached the mask to that actor and touched it
+  after it was destroyed ("has been already disposed" in the journal).
+
+Nothing visible changes. Maximized and fullscreen windows still keep a
+disabled effect between Overview visits; Clutter frees that buffer the moment
+the effect is enabled again.
+
 ## Revision 6 (2026-10-10)
 
 **The shadow is GNOME's own default, drawn inside the window.** It is
@@ -81,6 +112,6 @@ Tests, measurements, screenshots and the revision 5 files are under
 
 GNOME Shell imports an extension's code once per session: disabling and
 enabling does not load edited code. Log out and back in once; the journal then
-shows "Rounded Corners Light revision 6 loaded".
+shows "Rounded Corners Light revision 7 loaded".
 
 Disable with: `gnome-extensions disable rounded-corners-light@local`.

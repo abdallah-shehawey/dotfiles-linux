@@ -1,0 +1,9 @@
+# private test sessions and their output
+tests/session/
+tests/shots/
+tests/run.log
+tests/env.sh
+tests/stop
+harness/dconf/
+harness/nest-*/
+harness/*.jsonl

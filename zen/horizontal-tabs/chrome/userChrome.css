@@ -1,0 +1,2295 @@
+/* =========================================================================
+ * Zen Browser - horizontal tabs on the same row as the URL bar
+ * Tested on Zen 1.21.15b, 1.23b and 1.23.2b (Linux)
+ *
+ * Requires in about:config:
+ *   zen.tabs.vertical                                   = false
+ *   toolkit.legacyUserProfileCustomizations.stylesheets  = true
+ * ========================================================================= */
+
+:root {
+  --ctab-row: 36px;      /* height of the whole toolbar row */
+  --ctab-strip: 30px;    /* height of the tab strip inside it */
+  --ctab-tab: 120px;     /* width of an open tab that is not the current one */
+  --ctab-chip: 38px;     /* width of a PINNED tab / an essential: favicon only */
+  --ctab-active: 220px;  /* width of the current tab */
+  --ctab-peek: var(--ctab-tab);  /* a pinned chip while the pointer is on it */
+  --ctab-label: 12px;    /* the title on a tab that is not the current one */
+  --ctab-tab-h: 26px;    /* height of a tab */
+  --ctab-right: 158px;   /* space kept for app menu + window buttons */
+  --ctab-left: 128px;    /* back / forward / reload / home + their separator */
+  --ctab-foot: 34px;     /* the downloads button, at the far end of the row */
+  --ctab-dl: 300px;      /* the download stack that hangs under that button */
+  --ctab-url: 280px;     /* width of the address box */
+  /* Everything in the row that is NOT tabs. The tab strip cannot be sized in
+     percentages (see the cap on .zen-workspace-normal-tabs-section), so it is
+     measured out of 100vw with this, and every px of it that is wrong is a px
+     of empty row. Measured at 2560px wide, this exact button set:
+       4  #navigator-toolbox padding
+     128  #zen-sidebar-top-buttons  (4 buttons x 30 + the 8px separator)
+       2  #nav-bar margin + 280 address box + 2 margin
+       4  gap before #zen-tabs-wrapper            -> the strip starts at 420
+      34  #zen-sidebar-foot-buttons (downloads) + its gap
+     158  --ctab-right                            -> the strip ends at 2368  */
+  --ctab-reserve: calc(var(--ctab-left) + var(--ctab-url) + var(--ctab-foot) +
+                       var(--ctab-right) + 12px);
+  --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
+  --ctab-gap: 8px;       /* breathing room on each side of the address box */
+  --ctab-bm: 32px;       /* the bookmarks strip, on the pages that show it */
+
+  /* motion. One curve and three durations for the whole file, so nothing in
+     the row moves on a timing of its own. */
+  --ctab-ease: cubic-bezier(0.2, 0.9, 0.25, 1);        /* things changing size */
+  --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);       /* things arriving */
+  /* One tab handing over to another. Everything else in this file is a steep
+     ease-out because a press or a hover has to answer instantly, but a tab
+     switch is not feedback on a press - it is 182px of travel that has to be
+     WATCHABLE, and a steep curve spends all of it before the eye arrives.
+     Measured, in px moved per 40ms of real time (the tab being taken, 38 ->
+     220):
+
+       --ctab-ease @190ms          131  38  10   3   0    <- one blink
+       ease-out quart @190ms       112  49  17   4   0    <- still a blink
+       this curve  @260ms           30  66  45  24  12    <- a movement
+
+     The first slice still moves 30px, so the click answers immediately; the
+     rest is spread across the four slices after it instead of being over
+     before the first one ends. The small ease-in is what buys that spread -
+     it must stay small, or the tab feels like it hesitates before obeying.
+     No overshoot: two of these run at once and a bounce would read as slop. */
+  --ctab-ease-morph: cubic-bezier(0.3, 0.1, 0.2, 1);    /* a tab morphing */
+  --ctab-t-tab: 190ms;   /* a tab arriving or leaving the strip */
+  --ctab-t-morph: 260ms; /* a tab trading places with another */
+  --ctab-t-page: 220ms;  /* the PAGE crossing over on a tab switch */
+  /* How far the page compresses on its way out, and the size the arriving one
+     opens from. 0.97 of 1540x604 is 46px of width and 18px of height - enough
+     to read as the page closing into itself, small enough that the browser
+     background only shows for the moment the two are both mid-fade.
+     Set it to 1 to get a plain crossfade with no compression at all. */
+  --ctab-page-scale: 0.97;
+  --ctab-t-peek: 130ms;  /* the hover preview */
+  --ctab-t-omni: 300ms;  /* the floating address box arriving */
+  /* Entrances for the two popups. These were once 200ms behind a 50ms hold
+     with a per-row stagger on top, which is how a 19-row menu took 310ms to
+     finish arriving and the switcher's cards took 325ms - so what they read
+     as was a hang, not an animation. Short, and NOTHING is staggered: every
+     row and both boxes move together, so the whole popup fades as one thing.
+     The hold is the smallest one that still survives the popup window being
+     mapped a few frames after it opens (see the two blocks below). */
+  --ctab-t-panel: 60ms;  /* the Ctrl+Tab switcher fading in */
+  --ctab-d-panel: 0ms;   /* NO hold on the switcher, unlike the menus: it
+                            already sits behind Firefox's own 200ms open delay
+                            (hard-coded setTimeout in browser-ctrlTab.js, no
+                            pref), so the fade runs while the popup window is
+                            still being mapped and the card is simply THERE,
+                            fully opaque, on its first painted frame. Speed
+                            over watchability - the owner's call (2026-08-25),
+                            "the panel must show up faster". */
+  --ctab-t-menu: 130ms;  /* a menu fading in */
+  --ctab-d-menu: 30ms;   /* ...held that long so the popup window exists first */
+  /* the selection moving from card to card inside the switcher. Repainting
+     the ENTIRE panel - seven cards, their canvases and their labels, at the
+     zoom below - measures 1.6ms of CPU (drawWindow over the panel rect,
+     3.2ms, less the 0.47ms the call itself costs), so animating two of them
+     is nowhere near a frame and this can be a real transition rather than a
+     jump. Interruptible: hold Tab down and each flip retargets the one
+     before it, which is why it is shorter than the entrance. */
+  --ctab-t-switch: 130ms;
+  --ctab-switch-pop: 1.035; /* how much the selected card grows */
+  /* how big the Ctrl+Tab switcher is. ctrlTab.js sizes its thumbnails as
+     `availWidth * 0.85 / 7` and nothing in CSS changes that number, so this
+     scales the whole card. Cap: the popup window is `canvasWidth * 1.25` per
+     tab (~389px) and a card plus its gap is ~341px, so past ~1.14 the row is
+     wider than the window it lives in and the ends are cut off. */
+  --ctab-switch-zoom: 1.12;
+  --ctab-t-fast: 110ms;  /* colour, hover, press */
+
+  /* private windows get their own accent so the window is recognisable at a
+     glance: Zen's own tint is rgb(11,10,11), which is invisible on a dark
+     theme (zen-theme.css, [zen-private-window='true']) */
+  --ctab-private: 128, 116, 255;
+}
+
+/* ---- the toolbox becomes one horizontal row, content sits below it ----
+ * Everything that builds the row is guarded with
+ *     :root:not([chromehidden~="toolbar"])
+ * so it reaches real browser windows only. A POPUP - the window a site opens
+ * with window.open(..., "toolbar=no"), which is what every "Sign in with
+ * Google" button uses - has no tab strip and no window buttons, and Zen lays
+ * it out in a different place: it puts #nav-bar INSIDE
+ * #zen-appcontent-navbar-wrapper, which there is a static, full-width block
+ * sitting above the page - not the top-right box the window buttons live in.
+ *
+ * Unguarded, three rules landed on that layout and took it apart. Measured in
+ * a 520x680 popup, stock Zen against this file:
+ *
+ *                          stock Zen        this file, unguarded
+ *   #nav-bar               0,0  520x38      238,0  280x38   a pill on the right edge
+ *   #tabbrowser-tabbox     0,38 520x642     0,0    520x680  the page slid under it
+ *   #PanelUI-button        483,5 37x28      361,4  37x28    the app menu ON the address
+ *
+ * One cause each: #zen-appcontent-navbar-wrapper going `position: fixed` is
+ * what let the page rise to y=0; its `width: auto` is what shrank the bar onto
+ * the right edge; and #PanelUI-button's `right: 122px` is a gap held open for
+ * window buttons that a popup does not have. With the guard, every visible box
+ * in that popup measures identical to stock Zen.
+ *
+ * Three rules are deliberately NOT guarded: #titlebar, #TabsToolbar and
+ * #zen-sidebar-top-buttons keep this file's heights in a popup. Firefox gives
+ * all three `visibility: collapse` there and they measure zero WIDTH, so they
+ * paint nothing - three more prefixes for no pixel. */
+:root:not([chromehidden~="toolbar"]) #browser { flex-direction: column !important; }
+
+:root:not([chromehidden~="toolbar"]) #navigator-toolbox {
+  flex-direction: row !important;
+  align-items: center !important;
+  /* the row stops short of the window buttons: while the toolbox covered them
+     it swallowed every click on minimise / maximise / close */
+  width: calc(100% - var(--ctab-right)) !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  /* a MINIMUM, not a size: the bookmarks strip wraps onto a second line when
+     Firefox un-collapses it, and a fixed height would clip it */
+  flex-wrap: wrap !important;
+  height: auto !important;
+  min-height: var(--ctab-row) !important;
+  max-height: none !important;
+  padding-inline: 4px 0 !important;
+}
+
+#zen-sidebar-splitter { display: none !important; }
+#zen-appcontent-wrapper { flex: 1 1 auto !important; height: auto !important; min-height: 0 !important; }
+
+/* The tab strip claims the free space. The left cluster carries the XUL
+   flex="1" attribute, whose flex-grow cannot be overridden from here, so it is
+   out-grown instead of fought. */
+#titlebar {
+  flex: 1000 1 auto !important;
+  width: auto !important;
+  height: var(--ctab-strip) !important;
+  min-width: 0 !important;
+  flex-direction: row !important;   /* compact mode nests the toolbars in here */
+  align-items: center !important;
+}
+
+/* ---- left cluster: sidebar toggle, back / forward / reload / home ---- */
+#zen-sidebar-top-buttons { height: 28px !important; margin: 0 !important; padding: 0 !important; }
+
+/* ---- the cluster has to hold its own width, or every button leaves ----
+   Zen 1.23b wrapped these buttons in a new child,
+   #zen-sidebar-top-buttons-customization-target, and both it and the box
+   around it carry the XUL flex="1" attribute - flex: 1 1 0% with a
+   min-width of 1px. In this row #nav-bar is flex 0 0 280px and #titlebar
+   takes the rest, so there is no free space to grow into and a 0% basis
+   resolves to nothing: measured at 2560px wide, #zen-sidebar-top-buttons
+   came out 2.07px wide while its own target inside it measured 64 and
+   spilled out of it.
+
+   That width is not only cosmetic. CustomizableUI's overflow check
+   (OverflowableToolbar.#getOverflowInfo, CustomizableUI.sys.mjs) is
+
+     totalAvail = width(#zen-sidebar-top-buttons) - padding - width(the
+                  overflow button, which 1.23b now parks in this same box)
+     children   = sum of the buttons, minus the separator
+     overflowing = children > totalAvail
+
+   With a 2px box that is 2 - 28 = -26 against 128px of buttons, so the
+   check is true on every pass and the panel swallows the lot. Measured in
+   a window started on the 1.23b build:
+
+     #zen-sidebar-top-buttons   w=2     [overflowing]
+     #nav-bar-overflow-button   w=28    display:flex   <- the ">>"
+     widget-overflow-list       zen-toggle-compact-mode, stop-reload-button,
+                                home-button
+     #zen-tabs-wrapper          x=294   (the strip should start at 420)
+
+   max-content on both boxes is what the old build got for free when the
+   buttons were direct children: the box asks for exactly the buttons it
+   holds. It settles at 128px - the same number --ctab-left already
+   reserves for it - the overflow button goes display:none, the panel
+   empties, and the strip lands back on x=420 / 2368, the two numbers the
+   budget above is written around. 0 0 auto rather than a fixed width so a
+   button added or removed later still fits - but --ctab-left has to be
+   moved with it when that happens, because that is the copy of this number
+   --ctab-reserve caps the tab strip with, and only this box measures
+   itself. */
+#zen-sidebar-top-buttons,
+#zen-sidebar-top-buttons-customization-target {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: none !important;
+}
+#zen-toggle-compact-mode { order: 1 !important; }
+#back-button { order: 2 !important; }
+#forward-button { order: 3 !important; }
+#stop-reload-button { order: 4 !important; }
+#home-button { order: 5 !important; }
+#unified-extensions-button { order: 6 !important; }
+/* Keep a real separator: Zen's overflow check subtracts its width, and a
+   collapsed one makes every button flee into the ">>" menu. It only has to be
+   non-zero, not wide - at 24px it was most of the 30px hole between the last
+   button and the address box (measured: last button ended at x=94, the pill
+   started at x=124; the rest was 4px of #nav-bar margin and 2px of Zen's own
+   container/background margins). */
+#zen-sidebar-top-buttons-separator {
+  order: 7 !important;
+  width: var(--ctab-gap) !important;
+  min-width: var(--ctab-gap) !important;
+  max-width: var(--ctab-gap) !important;
+  flex: 0 0 var(--ctab-gap) !important;
+}
+
+/* app menu sits at the far right, next to the window buttons */
+:root:not([chromehidden~="toolbar"]) #PanelUI-button {
+  position: fixed !important;
+  top: 4px !important;
+  right: 122px !important;
+  z-index: 6 !important;
+}
+
+/* ---- URL bar: fixed and compact ---- */
+:root:not([chromehidden~="toolbar"]) #nav-bar {
+  width: var(--ctab-url) !important;
+  flex: 0 0 var(--ctab-url) !important;
+  height: var(--ctab-strip) !important;
+  /* 2px, not 4: Zen already adds 1px of #urlbar-container margin and 1px of
+     .urlbar-background margin inside this box, so the visible gap is always
+     this plus 2 */
+  margin: 0 2px !important;
+}
+
+/* The address box.
+   Everything below is scoped to the RESTING bar only: when Zen floats the bar
+   (Ctrl+T, Ctrl+L, clicking it) the same #urlbar element is re-used at a
+   completely different size, and a fixed height or a pill background there
+   turns the floating search box into a stretched black bar. The floating
+   state is any of [focused] [open] [breakout-extend] [zen-newtab]
+   [zen-floating-urlbar]. */
+:root:not([chromehidden~="toolbar"]) #nav-bar #urlbar-container { height: var(--ctab-tab-h) !important; min-height: var(--ctab-tab-h) !important; }
+
+:root:not([chromehidden~="toolbar"]) #nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
+  height: var(--ctab-tab-h) !important;
+  min-height: var(--ctab-tab-h) !important;
+
+  & .urlbar-background {
+    border-radius: 999px !important;
+    border: 1px solid color-mix(in srgb, currentColor 14%, transparent) !important;
+    background: color-mix(in srgb, currentColor 7%, transparent) !important;
+    box-shadow: none !important;
+    transition: background 120ms ease-out, border-color 120ms ease-out !important;
+  }
+  &:hover .urlbar-background {
+    background: color-mix(in srgb, currentColor 12%, transparent) !important;
+  }
+
+  /* the address is centred on the pill itself: the container's own padding is
+     asymmetric (8px / 4px), so the input is stretched over the whole box and
+     given equal padding instead of being centred inside that gap */
+  & .urlbar-input-container {
+    height: var(--ctab-tab-h) !important;
+    min-height: var(--ctab-tab-h) !important;
+    padding-inline: 0 !important;
+    position: relative !important;
+  }
+  & .urlbar-input-box {
+    position: absolute !important;
+    inset: 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  & #urlbar-input {
+    text-align: center !important;
+    padding-inline: 26px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+  }
+
+  /* only the padlock ICON goes. #identity-box itself must keep its box:
+     it is what Firefox anchors the passkey ("touch your security key"),
+     camera, microphone and location popups to, and an anchor with no box
+     makes those panels flicker in and out instead of standing still. */
+  &:not(:has(#notification-popup-box:not([hidden]))) #identity-box:is(.verifiedDomain, .chromeUI, .localResource, .extensionPage) > #identity-icon-box {
+    display: none !important;
+  }
+  & #identity-box:has(#notification-popup-box:not([hidden])) { opacity: 1 !important; }
+  /* the page actions sit on top of the pill instead of in the row, so they can
+     never push the address off centre */
+  & #page-action-buttons {
+    position: absolute !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    inset-inline-end: 3px !important;
+    z-index: 2 !important;
+  }
+  &:not(:hover) #page-action-buttons { opacity: 0 !important; pointer-events: none !important; }
+
+  /* The icons on the LEFT stay in the flow, as one row.
+     #identity-box used to be pinned at inset-inline-start: 5px, but it is not
+     the only icon that starts there: #zen-copy-url-button (Zen's copy-link
+     page action) and #tracking-protection-icon-container are flow children of
+     the same container and begin at its start edge, so with the pointer on the
+     toolbar - which is what reveals the copy-link button - the chain link and
+     the site icon were painted on top of each other.
+     Nothing on the left is taken out of the flow any more: the address is
+     centred by the absolutely positioned .urlbar-input-box, never by this row,
+     so leaving these three in the flex row costs nothing and makes an overlap
+     impossible by construction. The margin on the first one replaces the old
+     inset; keeping it off the container's padding is what stops the 5px from
+     shifting the centred address. */
+  & #identity-box,
+  & #tracking-protection-icon-container,
+  & #zen-copy-url-button {
+    position: relative !important;
+    flex: 0 0 auto !important;
+    align-self: center !important;
+    z-index: 2 !important;
+  }
+  & #identity-box { order: 1 !important; margin-inline-start: 5px !important; opacity: 0.6 !important; }
+  & #tracking-protection-icon-container { order: 2 !important; }
+  & #zen-copy-url-button { order: 3 !important; }
+}
+
+/* ---- tab strip ---- */
+#TabsToolbar { flex-direction: row !important; align-items: center !important; height: var(--ctab-strip) !important; width: auto !important; flex: 1 1 auto !important; }
+#TabsToolbar > .toolbar-items { flex: 1 1 auto !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#TabsToolbar-customization-target { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#tabbrowser-tabs { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; width: auto !important; }
+#zen-tabs-wrapper {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: var(--ctab-strip) !important;
+  width: auto !important;
+  position: relative !important;
+  /* a horizontal strip must never show a scrollbar: the bar showed up under
+     the tabs and scrolled the active tab out of sight */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+#tabbrowser-arrowscrollbox { flex: 1 1 auto !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#tabbrowser-tabs, zen-workspace, .workspace-arrowscrollbox,
+.zen-workspace-tabs-section, .zen-essentials-container { scrollbar-width: none !important; }
+
+zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important; }
+.zen-current-workspace-indicator { display: none !important; }
+/* The tab list lives inside the arrowscrollbox's shadow root, which the
+   ZenSpace template hard wires to orient="vertical"; ::part() rules are not
+   honoured from a user stylesheet, so the shadow flex column is turned
+   sideways instead: a vertical writing mode makes its block axis horizontal.
+   The sections switch back to horizontal-tb so their own content stays normal.
+
+   The orient guard is not cosmetic. A PRIVATE window builds its space during
+   init, before #tabbrowser-tabs is stamped horizontal, so tabs.js's
+   attributeChangedCallback propagates "horizontal" down to this box and its
+   pinned section - a normal window restores its space from the session store
+   after that, and keeps the template's "vertical". An unguarded
+   writing-mode: vertical-lr then turns the already-horizontal row into a
+   top-to-bottom column: measured, every private-window tab was laid out at
+   y=33, one full row BELOW the strip, which is why they looked missing. */
+.workspace-arrowscrollbox {
+  height: var(--ctab-strip) !important;
+  max-height: none !important;
+}
+.workspace-arrowscrollbox[orient="vertical"] {
+  writing-mode: vertical-lr !important;
+}
+/* already horizontal (private windows): only keep the sections in one row */
+.workspace-arrowscrollbox[orient="horizontal"] {
+  flex-direction: row !important;
+  align-items: center !important;
+}
+.workspace-arrowscrollbox[orient="horizontal"] > .zen-workspace-pinned-tabs-section {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  height: var(--ctab-strip) !important;
+}
+.workspace-arrowscrollbox[orient="horizontal"] > .zen-workspace-normal-tabs-section {
+  flex: 1 1 auto !important;
+  height: var(--ctab-strip) !important;
+}
+.zen-workspace-tabs-section {
+  writing-mode: horizontal-tb !important;
+  flex-direction: row !important;
+  height: var(--ctab-strip) !important;
+  align-items: center !important;
+}
+
+/* The tab list lives in a scroll container that sizes itself to its content,
+   so the strip only shrinks against a length. The two icon rows in front of it
+   are counted here - one rule per icon - so the cap follows them instead of
+   guessing, and the tabs always stay inside the window. */
+#tabbrowser-tabs { --ctab-ess: 0px; --ctab-pins: 0px; --ctab-sel: 0px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(1 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 40px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(2 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 80px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(3 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 120px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(4 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 160px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(5 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 200px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(6 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 240px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(7 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 280px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(8 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 320px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(9 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 360px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(10 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 400px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(11 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 440px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(12 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 480px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(13 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 520px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(14 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 560px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(15 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 600px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(16 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 640px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(17 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 680px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(18 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 720px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(19 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 760px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(20 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 800px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(21 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 840px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(22 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 880px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(23 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 920px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(24 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 960px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(1 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 52px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(2 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 92px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(3 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 132px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(4 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 172px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(5 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 212px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(6 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 252px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(7 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 292px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(8 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 332px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(9 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 372px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(10 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 412px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(11 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 452px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(12 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 492px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(13 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 532px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(14 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 572px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(15 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 612px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(16 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 652px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(17 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 692px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(18 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 732px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(19 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 772px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(20 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 812px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(21 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 852px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(22 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 892px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(23 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 932px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(24 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 972px; }
+/* the current tab is wide wherever it lives, so an active pin costs more */
+#tabbrowser-tabs:has(:is(.zen-essentials-container, .zen-workspace-pinned-tabs-section) .tabbrowser-tab:is([selected], [visuallyselected])) {
+  --ctab-sel: 190px;
+}
+.zen-workspace-normal-tabs-section {
+  max-width: max(180px, calc(100vw - var(--ctab-reserve) - var(--ctab-newtab) - var(--ctab-ess) - var(--ctab-pins) - var(--ctab-sel))) !important;
+  /* past ~40 tabs even the narrowest chips no longer fit: scroll, still
+     without a bar */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+.zen-workspace-empty-space { display: none !important; }
+.zen-workspace-pinned-tabs-section { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+.zen-workspace-normal-tabs-section { flex: 1 1 auto !important; width: auto !important; min-width: 0 !important; }
+
+/* Essentials: a compact icon row, never a grid block. Zen positions the
+   container absolutely, which made it hover over the whole strip and cover the
+   real tabs; in flow it claims its own slice of the row instead. */
+#zen-essentials {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 40vw !important;
+  height: var(--ctab-strip) !important;
+  overflow: hidden !important;
+}
+#zen-essentials:not(:has(.tabbrowser-tab)) { display: none !important; }
+.zen-essentials-container {
+  position: static !important;
+  display: flex !important;
+  flex-direction: row !important;
+  width: max-content !important;
+  max-width: 100% !important;
+  height: var(--ctab-strip) !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+
+/* ---- compact mode ----
+   Zen's compact mode is built for its vertical sidebar: it turns
+   #navigator-toolbox into a full-height box, parks it OFF the left edge of
+   the window (position: fixed; left: -sidebar-width) and slides it back in
+   while the pointer is near that edge. In this layout the toolbox IS the top
+   row, so that state leaves the window with no toolbar and a page that jumps
+   whenever the pointer reaches the edge. It is put back to normal here, and
+   the button that toggles it is taken out of the row - the pref
+   (zen.view.compact.enable-at-startup) is forced off in user.js as well,
+   otherwise the browser comes back in this state after a restart. */
+#zen-toggle-compact-mode { display: none !important; }
+
+:root[zen-compact-mode="true"] {
+  & #navigator-toolbox,
+  & #navigator-toolbox:not([animate="true"]) {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: calc(100% - var(--ctab-right)) !important;
+    height: var(--ctab-row) !important;
+    min-height: var(--ctab-row) !important;
+    max-height: var(--ctab-row) !important;
+    margin: 0 !important;
+    padding: 0 0 0 4px !important;
+    transform: none !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 2 !important;
+  }
+  & #navigator-toolbox #titlebar,
+  & #navigator-toolbox:not([animate="true"]) #titlebar {
+    position: static !important;
+    visibility: visible !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: var(--ctab-strip) !important;
+    padding: 0 !important;
+  }
+  & #zen-sidebar-top-buttons {
+    max-height: none !important;
+    min-height: 0 !important;
+    height: 28px !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+  }
+  & .zen-toolbar-background { display: none !important; }
+  & #zen-appcontent-navbar-wrapper {
+    opacity: 1 !important;
+    visibility: visible !important;
+    max-height: var(--ctab-row) !important;
+    pointer-events: auto !important;
+  }
+  & #zen-appcontent-wrapper,
+  & #zen-tabbox-wrapper { margin-top: 0 !important; }
+
+  /* compact mode also re-parents the nav bar and the top buttons INTO
+     #titlebar. The DOM order there is already [buttons][address][tabs]; what
+     breaks the row is that the buttons box and the tab strip both carry the
+     XUL flex="1" attribute, whose flex-grow no CSS can lower (see the note on
+     #zen-sidebar-top-buttons above), so they split the row in half. A
+     max-width caps the buttons instead - that one the XUL attribute does not
+     touch - and the strip takes everything that is left. */
+  & #titlebar {
+    flex-direction: row !important;
+    align-items: center !important;
+    width: auto !important;
+  }
+  & #zen-sidebar-top-buttons { max-width: 152px !important; }
+  & #TabsToolbar { min-width: 0 !important; }
+}
+
+/* ---- tabs: an open tab carries its title, a pinned one is a favicon chip --- */
+/* every width rule is scoped to [fadein]: Firefox drops that attribute while a
+   tab is on its way out and its own rules then collapse the tab to nothing -
+   that is the closing animation, and forcing a width here would freeze it.
+
+   Every tab that is not the current one is the same width, pointer on it or
+   not: the row is meant to be read at a glance, and a strip of favicons is
+   only readable one tab at a time, under the pointer. flex-shrink stays at 1,
+   so a full strip still squeezes these down towards the 24px minimum instead
+   of pushing the last tabs out of the window - that squeeze IS the fallback
+   the favicon chip used to be.
+
+   flex-GROW stays 0, and that is a decision, not an oversight: letting the
+   tabs share out an empty row (flex: 1 1) was built and measured - 14 tabs
+   went 120 -> 128 and the row ran to its end - and the owner asked for the
+   fixed width back the same day. A tab is 120px wherever it is in the row;
+   what the row has spare stays spare. */
+.tabbrowser-tab[fadein] {
+  flex: 0 1 var(--ctab-tab) !important;
+  width: var(--ctab-tab) !important;
+  min-width: 24px !important;
+  max-width: var(--ctab-tab) !important;
+}
+/* a pinned tab and an essential stay icons - that is what pinning one is for,
+   and the strip cap further up counts them at 40px each */
+.tabbrowser-tab[fadein]:is([pinned], [zen-essential]) {
+  flex: 0 1 var(--ctab-chip) !important;
+  width: var(--ctab-chip) !important;
+  max-width: var(--ctab-chip) !important;
+}
+.tabbrowser-tab[fadein]:is([selected], [visuallyselected]) {
+  flex: 0 0 var(--ctab-active) !important;
+  width: var(--ctab-active) !important;
+  min-width: var(--ctab-active) !important;
+  max-width: var(--ctab-active) !important;
+}
+.tabbrowser-tab {
+  height: var(--ctab-tab-h) !important;
+  max-height: var(--ctab-tab-h) !important;
+}
+.tabbrowser-tab:is([selected], [visuallyselected]) {
+  height: calc(var(--ctab-tab-h) + 2px) !important;
+  max-height: calc(var(--ctab-tab-h) + 2px) !important;
+  font-weight: 600 !important;
+}
+/* ---- the title ----
+   An open tab and the current one both carry their title; a pinned chip shows
+   its favicon only. That title is not switched on and off: the label box is
+   always there and is folded to max-width 0 on a chip, so it can open and
+   close WITH the tab.
+
+   It used to be `display: none` on a chip, and that is a discrete property -
+   Firefox drops the box on the same frame [selected] goes, leaving nothing to
+   animate. Measured on a switch: the title of the tab being left was gone by
+   the first frame, 190ms before its pill had finished closing, which is most
+   of why a switch read as one tab shutting and another opening. Firefox 154
+   parses `transition: display Xms allow-discrete` here and reports it in the
+   computed style, but no such transition ever starts (measured: zero entries
+   in getAnimations() on that frame), so the box has to keep existing instead.
+
+   Folding it costs nothing: `min-width: auto` would normally stop a flex item
+   collapsing below its own text, but the box already carries overflow: hidden,
+   which resolves that automatic minimum to 0. The favicon does not move -
+   with max-width 0 the label takes exactly the 0px it took while it was
+   display: none. Its max-width rides the same curve and the same 190ms as the
+   tab around it, so the title is clipped away at the speed the pill closes,
+   and unfolds at the speed the pill opens. */
+.tabbrowser-tab .tab-label-container {
+  overflow: hidden !important;
+  transition:
+    max-width var(--ctab-t-morph) var(--ctab-ease-morph),
+    transform var(--ctab-t-morph) var(--ctab-ease-morph),
+    /* the text goes before the box does - half the fold, so the title is
+       already gone by the time the pill is too narrow to hold it */
+    opacity var(--ctab-t-peek) var(--ctab-ease-morph) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container {
+  max-width: var(--ctab-tab) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+/* the fold, which is now only a pinned chip's */
+.tabbrowser-tab:not([selected]):not([visuallyselected]):is([pinned], [zen-essential]) .tab-label-container {
+  max-width: 0 !important;
+  opacity: 0 !important;
+  transform: translateX(-8px) !important;
+}
+/* 120px holds the favicon, the X and about eight characters of title at the
+   13.3px the current tab uses; a step down buys a couple more without the row
+   reading as two different type sizes */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label {
+  font-size: var(--ctab-label) !important;
+}
+/* The open end of that fold. It was a keyframe animation - 200ms after a
+   60ms delay - which ran on a clock of its own: the title was still fading in
+   70ms after the pill had stopped growing. As a transition it cannot drift,
+   because it is the same declaration as the fold above and therefore the same
+   190ms and the same curve as the tab. `.tab-label` is white-space: nowrap,
+   so a box that is too narrow for it clips it rather than re-wrapping it -
+   which is what makes the head start the old animation needed unnecessary. */
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container {
+  display: flex !important;
+  max-width: var(--ctab-active) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* keep every tab inside its own box: the stack is taller than the strip by
+   default, and a close button in the flow would push past a chip's edge */
+.tabbrowser-tab .tab-stack,
+.tabbrowser-tab .tab-content { height: 100% !important; min-height: 0 !important; }
+.tabbrowser-tab .tab-content { position: relative !important; padding-inline: 6px !important; }
+.tabbrowser-tab .tab-background {
+  height: calc(100% - 2px) !important;
+  min-height: 0 !important;
+  align-self: center !important;
+  border-radius: 8px !important;
+  /* the gap between two tabs is painted, not laid out: insetting the
+     background keeps every width calculation in this file intact */
+  margin-inline: 2px !important;
+  box-sizing: border-box !important;
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
+}
+/* without this two chips side by side are just two loose favicons with no
+   edge between them */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-background {
+  background: color-mix(in srgb, currentColor 8%, transparent) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-background {
+  background: color-mix(in srgb, currentColor 15%, transparent) !important;
+}
+
+/* The X keeps its place in the flow on every open tab and only fades in under
+   the pointer, so the title never re-flows when the pointer crosses the row -
+   the 20px it costs is spent whether it is showing or not. It is not clickable
+   while it is invisible, so a click on that corner still selects the tab.
+
+   A pinned chip carries none at all: at 38px the button IS the whole chip and
+   every click would close the tab instead of opening it.
+
+   Zen 1.23.2b moved its own show/hide of the X from `display` to
+   `visibility`: vertical-tabs.css now gives every tab's X
+   `visibility: collapse` and only `visible` under :hover. A collapsed flex
+   item gives up its width, so that undid both halves of this rule. Measured
+   at 2560px, a 120px open tab and the 220px current one:
+
+                           X       title
+     open tab, away        4px     78.7px    collapsed
+     open tab, hovered     18px    58.7px    <- the title jumps 20px
+     current tab, away     4px     collapsed: no X until the pointer lands
+
+   `visibility: visible` here puts both back: 18px on every open tab with
+   the pointer on it or not (the title 58.7px both ways), and the current
+   tab shows its X again, as in docs/row.png. */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-close-button {
+  display: flex !important;
+  visibility: visible !important;
+  flex: 0 0 auto !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  padding: 2px !important;
+  margin-inline: 2px 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity var(--ctab-t-fast) ease-out !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-close-button {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+.tabbrowser-tab:is([pinned], [zen-essential]):not([selected]):not([visuallyselected]) .tab-close-button {
+  display: none !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-icon-stack { visibility: visible !important; }
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-close-button { display: block !important; visibility: visible !important; }
+
+/* ---- hovering a pinned chip opens a small preview of it ----
+   the chip widens to the width of an open tab, with the page title and an X,
+   and folds back when the pointer leaves. The 80ms delay is what keeps the
+   strip still while the pointer only crosses it; the label and the X wait out
+   that delay with animation-fill-mode: backwards, so nothing flashes inside a
+   38px box.
+
+   Only a PINNED tab peeks now. An open tab is already this wide and shows its
+   title standing still, so growing it under the pointer would be the strip
+   shuffling for nothing. */
+.tabbrowser-tab[fadein][pinned]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+  /* flex-shrink must be 0 here: with a full strip every chip is already down
+     on its 24px minimum, and a shrinkable box would just be squeezed back */
+  flex: 0 0 var(--ctab-peek) !important;
+  width: var(--ctab-peek) !important;
+  min-width: var(--ctab-peek) !important;
+  max-width: var(--ctab-peek) !important;
+  transition-delay: 80ms !important;
+  transition-duration: var(--ctab-t-peek) !important;
+  z-index: 3 !important;
+}
+.tabbrowser-tab[pinned]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+  & .tab-label-container {
+    display: flex !important;
+    max-width: var(--ctab-peek) !important;
+    opacity: 1 !important;
+    transform: none !important;
+    /* the same 80ms wait and the same 130ms as the chip itself, so the label
+       opens on the frame the chip does and lands with it - neither shows
+       before the strip has committed to the preview */
+    transition-delay: 80ms !important;
+    transition-duration: var(--ctab-t-peek) !important;
+  }
+  & .tab-label { font-size: var(--ctab-label) !important; }
+  & .tab-close-button {
+    display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    flex: 0 0 auto !important;
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    padding: 2px !important;
+    margin-inline: 2px 0 !important;
+    animation: ctab-peek 130ms ease-out 80ms backwards !important;
+  }
+}
+@keyframes ctab-peek {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ---- how a tab moves ----
+   This one declaration is the open animation, the close animation and the
+   grow-into-a-pill on select, because all three are the same thing: Firefox
+   collapses a tab to max-width 0.1px the moment it drops [fadein] and expands
+   it back when it gets it, and the selected tab's width comes from the rules
+   above. userChrome.css is USER origin, so this !important is the last word -
+   which is exactly why the list below has to be complete.
+
+   `opacity` is deliberately NOT in it. Zen animates a tab open and closed in
+   JS (ZenUIManager.animateItemOpen / animateItemClose, the Motion library):
+   opacity 0->1 and scale .95->1, written frame by frame into the inline style.
+   A CSS transition on the same property turns every one of those frames into
+   its own 120ms ease, which drags the fade a whole transition behind the
+   scale - measured on a fresh tab, opacity crawled 1.00 -> 0.74 -> 0.51 -> ...
+   -> 0.00 instead of following Motion. Same reason `transform` is absent. */
+.tabbrowser-tab {
+  transition:
+    flex-basis var(--ctab-t-morph) var(--ctab-ease-morph),
+    width var(--ctab-t-morph) var(--ctab-ease-morph),
+    min-width var(--ctab-t-morph) var(--ctab-ease-morph),
+    max-width var(--ctab-t-morph) var(--ctab-ease-morph),
+    height var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+
+/* Closing is not switching, so it does not get the switching clock. A tab on
+   its way out has dropped [fadein] - that is the one state that tells the two
+   apart from CSS - and it keeps the 190ms it always had, because the gap it
+   leaves behind should shut briskly, not be dwelt on. */
+.tabbrowser-tab:not([fadein]) {
+  transition-duration: var(--ctab-t-tab) !important;
+}
+
+/* Why `flex-basis` had to be in that list, and why it is what makes switching
+   tabs read as one movement.
+
+   A tab is a flex item, so `width` never decides its size: the used size is
+   max(min-width, min(max-width, flex-basis)). With flex-basis missing from
+   the list it snapped to its new value on the first frame and the two ends of
+   a switch were then clamped by DIFFERENT properties -
+
+     the tab being left  = max(min-width, 38px)  -> follows MIN-width
+     the tab being taken = min(max-width, 220px) -> follows MAX-width
+
+   and those two do not travel the same distance. min-width runs 220 -> 24
+   (a chip may be squeezed to 24px on a full strip), so the old tab reached
+   38px after 92 of the 190ms and stopped there, while the new one used all
+   190. Measured on a switch: the old tab was already a chip at t=94ms, the
+   new one was still 26px short of the pill at t=160ms. That is the "the old
+   one closed and then the new one opened" the whole row read like, and it is
+   also why the "+" after the last tab twitched: for those 100ms the strip was
+   182px narrower than at either end of the switch.
+
+   With flex-basis transitioning, all three properties leave together and the
+   used size collapses to one curve at both ends: 220 -> 38 on the tab being
+   left, 38 -> 220 on the tab being taken, the same easing over the same
+   260ms. They are exact mirrors, so their sum never changes - the rest of the
+   strip and the "+" hold still while the two tabs trade places.
+
+   Nothing here is a property Zen animates itself: its open/close is Motion
+   writing opacity / scale / margin-bottom, and its drag engine writes
+   transform (see the two notes above). flex-basis is ours alone. */
+
+/* Reordering by dragging is deliberately left alone. Firefox would slide the
+   other tabs aside with `transition: var(--tab-dragover-transition)`, but Zen
+   replaces the whole drag engine (ZenDragAndDrop) and moves them itself, in
+   JS: `elementAnimate(ele, { y: [translateY, 0] }, { duration: 100 })`, writing
+   `transform: translateY(...)` into the inline style frame by frame. Adding a
+   CSS transition on transform here would put a 200ms ease in front of every
+   one of those frames - the same conflict the opacity note above describes.
+   (That engine is hard-wired to the vertical sidebar, so it shoves the
+   neighbours on the wrong axis in this row. CSS cannot redirect a transform,
+   only cancel it, and cancelling would also stop the dragged tab following the
+   pointer - so this is left as Zen wrote it.) */
+
+/* Zen's open/close animation also moves `margin-bottom` by the tab's HEIGHT -
+   in the vertical sidebar that is how a tab makes room for itself, and in this
+   row it is a vertical hop. The horizontal equivalent is the width transition
+   above, which comes for free, so the margin is simply pinned. (Measured 0 on
+   every side before this rule, so nothing intended is being removed.) */
+.tabbrowser-tab { margin-block: 0 !important; }
+
+/* ---- the "+" after the last tab ----
+   Zen ships #tabs-newtab-button as display:none and only reveals it behind
+   @media -moz-pref("zen.tabs.show-newtab-vertical") (vertical-tabs.css), so
+   the pref is set in user.js AND the display forced here - the pref alone
+   leaves the button at the mercy of a future Zen restyle, and the rule alone
+   would leave Zen's own sizing off.
+   It lives in #tabbrowser-arrowscrollbox-periphery, which is a flow child of
+   .zen-workspace-normal-tabs-section, i.e. already after the last tab; order
+   only pins it there while a tab is being dragged. */
+#tabbrowser-arrowscrollbox-periphery:not([hidden]) {
+  order: 99 !important;
+  position: static !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  height: var(--ctab-strip) !important;
+}
+#tabs-newtab-button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 var(--ctab-newtab) !important;
+  width: var(--ctab-newtab) !important;
+  min-width: var(--ctab-newtab) !important;
+  max-width: var(--ctab-newtab) !important;
+  height: var(--ctab-tab-h) !important;
+  max-height: var(--ctab-tab-h) !important;
+  min-height: 0 !important;
+  margin-inline: 2px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  opacity: 0.65 !important;
+  background: color-mix(in srgb, currentColor 8%, transparent) !important;
+  transition: background 120ms ease-out, opacity 120ms ease-out !important;
+}
+#tabs-newtab-button:hover {
+  opacity: 1 !important;
+  background: color-mix(in srgb, currentColor 16%, transparent) !important;
+}
+#tabs-newtab-button .toolbarbutton-text { display: none !important; }
+#tabs-newtab-button .toolbarbutton-icon {
+  width: 14px !important;
+  height: 14px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+/* no "Clear" (close unpinned tabs) button in the strip */
+.zen-workspace-close-unpinned-tabs-button { display: none !important; }
+.pinned-tabs-container-separator {
+  width: 9px !important;
+  min-width: 9px !important;
+  /* Zen positions this separator for the vertical sidebar and can leave a
+     `transform: translateY(-26px)` on it while pinned tabs are being
+     rearranged - seen mid-pin at y=-21 in a 30px row. A vertical offset on a
+     separator that divides a horizontal row is never right. */
+  transform: none !important;
+}
+
+/* ---- nothing empty may sit between the address box and the first tab ----
+   With no pinned tabs the pinned section still occupied 19px of the row (5px
+   padding + a 9px separator + 5px padding), which together with #nav-bar's
+   margin was a 27px hole before the first tab - measured, the pill ended at
+   x=400 and the first tab's background began at x=427. The separator only
+   means anything when there is something on both sides of it, so the whole
+   section is collapsed while the workspace has no pinned tab. :has() reads the
+   ACTIVE workspace only; a background workspace's pins must not keep the gap
+   open in this one. */
+zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-tab:not([hidden]))) {
+  & .zen-workspace-pinned-tabs-section {
+    display: none !important;
+  }
+}
+/* The wrapper stops pulling itself 5px left to compensate for that section,
+   and takes a small offset of its own instead, so the tabs clear the address
+   box by about as much as the address box clears the last button. */
+#zen-tabs-wrapper { margin-inline-start: 4px !important; }
+.zen-workspace-normal-tabs-section { padding-inline-start: 0 !important; }
+
+/* downloads etc. at the end of the row */
+#zen-sidebar-foot-buttons { flex: 0 0 auto !important; width: auto !important; height: 28px !important; }
+#zen-create-new-button { display: none !important; }
+
+/* ---- the media controls never appear in this row ----
+   Zen puts #zen-media-controls-toolbar inside #TabsToolbar, and hides it
+   whenever the sidebar is collapsed (zen-media-controls.css ends on
+   `:root:not([zen-sidebar-expanded="true"]) { #zen-media-controls-toolbar {
+   display: none } }`). With horizontal tabs the root carries
+   zen-sidebar-expanded="true" permanently - checked in a live window - so
+   that rule never fires and the bar turns up in the row the moment a tab
+   starts playing.
+
+   It has nowhere to go. Zen gives it `flex-shrink: 1; min-width: 0`, which is
+   safe beside a 250px sidebar and is not safe here: the tab strip has already
+   claimed the row, so the bar is squeezed to nothing and the card inside it
+   spills out of the box it was squeezed into. Measured at 2560px wide, four
+   tabs, one of them playing:
+
+                                   playing        nothing playing
+     #zen-media-controls-toolbar   2395  w=0      -
+     .zen-media-card               2395  w=12     -
+     #zen-tabs-wrapper              390  w=2000    390  w=2005
+     #navigator-toolbox ends at    2402           2402
+
+   A 12px card, 5px of it PAST the end of the toolbox - and what is past that
+   end is --ctab-right, the strip held open for the app menu and the window
+   buttons, so the card lands on the minimise / maximise / close corner.
+   Hovering it does not help either: the stack grows UPWARD
+   (`flex-direction: column-reverse`, the cards overflowing above the box),
+   because above a sidebar bar is more sidebar - and above this one is the top
+   of the window. Forcing the hover state open moved nothing: with a 12px card
+   the title, the artist and the progress bar all measure zero.
+
+   Hidden, every box in the row measures identical to the "nothing playing"
+   column above, so the strip also stops flinching 5px narrower every time a
+   video starts. What is lost is the scrub bar and the track title; per-tab
+   volume still lives on the tab's own speaker icon. Deliberately NOT guarded
+   with :root:not([chromehidden~="toolbar"]) - a popup that starts playing
+   should not grow this bar either. */
+#zen-media-controls-toolbar { display: none !important; }
+
+/* ---- the Library opens below the row, not over it ----
+   New in Zen 1.23b (zen.library.enabled, zen-library.css): the downloads
+   button in #zen-sidebar-foot-buttons became #zen-library-button, and it
+   slides out a panel holding Media / Downloads / Boosts / Spaces / History.
+
+   zen-library is `position: absolute; top: 0; bottom: 0; left: 0` and its
+   containing block is #browser, which is the whole window - correct beside
+   a vertical sidebar, where the toolbar is the left edge and nothing of it
+   lives at the top. Here the toolbar IS the top, so the panel opens over
+   it. Measured at 2560x900 with the panel open:
+
+                            top       covers
+     zen-library            y=0       x=0..418, the full height
+     #navigator-toolbox     y=0..40   every tab, the address box, back/fwd
+     #zen-appcontent-wrapper  y=42    where the panel should have started
+
+   - the tab strip, the address box and the left cluster all sat underneath
+   it and could not be clicked while the Library was open.
+
+   42px is where the content area begins: 36px of --ctab-row, 5px of Zen's
+   own padding-bottom on the toolbox, 1px of rounding. Kept as its own
+   variable because it is a measured offset, not a size anything else
+   shares. The toolbox is `flex-wrap: wrap` and grows a second line for the
+   bookmarks strip on the new-tab page; the panel does not follow it there
+   and will cover that strip, which is the one state this trades away. */
+:root {
+  --ctab-lib-top: calc(var(--ctab-row) + 6px);
+}
+:root:not([chromehidden~="toolbar"]) zen-library {
+  top: var(--ctab-lib-top) !important;
+}
+
+/* ...and opening it must not drag the page out of the window. Zen writes an
+   inline `transform: translateX(...)` onto #zen-appcontent-wrapper while the
+   panel is open - a push, so that beside a vertical sidebar the page slides
+   clear of the panel instead of hiding under it. The distance it picks is
+   wrong here. Measured at 2560x1440 on a 10x10 grid page, opening the
+   Library:
+
+     #zen-appcontent-wrapper   style="transform: translateX(-1984px)"
+                               x=-1984  w=2560   -> right edge at 576
+
+   so 1984px of the page is pushed off the left of the window and what is
+   left on screen is its rightmost 576px, painted underneath the panel. On a
+   real page that reads as the layout coming apart: the grid's last two
+   columns, or GitHub's "New pull request" button and its comment counts,
+   sitting on top of the History list with the rest of the window blank.
+
+   None of that is this file's doing - a control run with the rule above
+   removed gives the same -1984px - but a 36px row has no sideways room to
+   give a panel in the first place, so there is nothing to push. Held still,
+   the Library is simply an overlay over the left 418px of the page, which
+   is what a panel anchored to a button in the top row should be.
+
+   Scoped to the sibling so it only fires while the panel is open: the same
+   inline transform carries Zen's workspace swipe, and a blanket
+   `transform: none` would freeze that. #browser's children are, in order,
+   ... #navigator-toolbox, zen-library, ..., #zen-appcontent-wrapper. */
+zen-library[open] ~ #zen-appcontent-wrapper {
+  transform: none !important;
+}
+
+/* Holding the page still means the panel is now over live content, and it
+   has no background of its own to cover it with - measured, every box in it
+   is transparent:
+
+     zen-library           background rgba(0, 0, 0, 0)
+     #zen-library-panel    background rgba(0, 0, 0, 0)
+     #zen-library-side     only a linear-gradient of rgba(255,255,255,.08)
+     #zen-library-content  background rgba(0, 0, 0, 0)
+
+   It never needed one: the push moved the page out from behind it and what
+   showed through was #zen-browser-background. So give it that same colour,
+   --zen-main-browser-background, which is the variable that backdrop is
+   painted from and which already resolves per theme
+   (light-dark(rgb(235,235,235), #1b1b1b)) - the panel looks exactly as it
+   did, over a page instead of over an empty window. The shadow down the
+   right edge is what the page no longer being pushed costs: without it the
+   panel and the content it covers run together.
+
+   Not scoped to [open]: zen-library is visibility:hidden until then, which
+   hides a background too, and scoping it would drop the backdrop on the
+   first frame of the close animation and show the page through a panel
+   still on its way out. */
+zen-library {
+  background: var(--zen-main-browser-background,
+                  light-dark(rgb(235, 235, 235), #1b1b1b)) !important;
+  box-shadow: 6px 0 24px -6px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* The panel clones the minimise / maximise / close buttons into its own top
+   corner (.zen-library-window-buttons-clone). zen-library.css hides that
+   clone with :root:not([zen-sidebar-expanded="true"]), and with horizontal
+   tabs the root carries zen-sidebar-expanded="true" permanently - the same
+   trap as #zen-media-controls-toolbar above - so the clone turns up on top
+   of the panel while the real window buttons are still in the corner where
+   this file fixed them. Two sets of window buttons, 418px apart. */
+.zen-library-window-buttons-clone { display: none !important; }
+
+/* The Library button also carries the download stack that replaced the old
+   downloads button: #zen-library-download-list, `position: absolute;
+   bottom: 100%`, the cards hidden until #zen-sidebar-foot-buttons takes
+   [zen-library-stack-open]. Stacking upward is right under a vertical
+   sidebar - above the button is more sidebar - and wrong here, where above
+   the button is the top of the window. Forced open and measured at
+   2560x1440, the button sitting at y=5..33:
+
+     #zen-library-download-list   y=-225..5    (top: -230px)
+       card 0   y=-215..-163
+       card 1   y=-159..-107
+       card 2   y=-103..-51
+       card 3   y=-47..5
+
+   all four off the top of the window, the newest one poking 5px back into
+   the row on top of the tab strip. Turned over to hang below the button
+   instead: top:100% puts the list at the row's lower edge, column-reverse
+   keeps the newest card nearest the button the way it was, and the
+   entrance that slid the cards up by 25px drops them in by 25px so the
+   motion still comes from the button.
+
+   That fixed the direction and missed three things. They only show with
+   real downloads and a real pointer on the button - the numbers above came
+   from setting the attribute by hand, which is not all a hover does.
+   Measured on 1.23.2b at 2560x1440, four downloads:
+
+     width     the list is `width: 100%` of #zen-sidebar-foot-buttons -
+               beside a sidebar that is the sidebar, here it is the 28px
+               button. Four 28x52 cards with a title column 0px wide: a grey
+               pill with nothing in it.
+     backdrop  a card has no background until it is hovered. Beside a
+               sidebar it sits on the sidebar; here it sits on the page.
+     the tabs  the widget also stamps [zen-library-stack-open] on
+               #TabsToolbar-customization-target, and zen-single-components
+               masks that box from the bottom by the stack's height so the
+               end of a vertical tab list fades out under the cards. Here
+               that box IS the tab strip, 30px tall, and the mask came out
+               calc(100% - 215px): every tab and the "+" were gone for as
+               long as the pointer stayed on the button.
+
+   1.23.2b also changed how the cards move. They now transition `transform`
+   from translateY(25px) to translateY(0) themselves, and
+   --zen-library-progress moved onto the button's badge - so on a card it is
+   the registered initial value, 0, and the old
+   translateY(calc((1 - progress) * -25px)) here was a constant -25px. The
+   open cards measured y=17.5..237.5 instead of 42.5..262.5, the newest one
+   24.5px up inside the 42px row.
+
+   So the stack is a column of its own width, right-aligned under the
+   button, each card a floating chip in the theme's panel colour (the
+   variable the menus are painted with, so a theme change carries it), the
+   strip is never masked, and the entrance is written the way 1.23.2b
+   writes it: 25px above, falling into place. Zen's own transition on
+   `transform` and `opacity`, stagger included, is left to run it. */
+#zen-library-download-list {
+  top: 100% !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: 0 !important;
+  width: var(--ctab-dl) !important;
+  flex-direction: column-reverse !important;
+  padding-top: 12px !important;
+}
+.zen-library-download-list-download {
+  background: var(--arrowpanel-background) !important;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+  box-shadow:
+    0 10px 24px -10px rgba(0, 0, 0, 0.5),
+    0 2px 8px -4px rgba(0, 0, 0, 0.35) !important;
+  transform: translateY(-25px) !important;
+}
+.zen-library-download-list-download:hover {
+  background: color-mix(in srgb, var(--arrowpanel-background), currentColor 8%) !important;
+}
+#zen-sidebar-foot-buttons[zen-library-stack-open] .zen-library-download-list-download {
+  transform: none !important;
+}
+#TabsToolbar-customization-target { mask-image: none !important; }
+
+/* ---- window buttons stay top-right ---- */
+:root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-wrapper {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+  width: auto !important;
+  height: var(--ctab-row) !important;
+  z-index: 10 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+}
+:root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-container {
+  width: auto !important;
+  height: var(--ctab-row) !important;
+  align-items: center !important;
+  background: transparent !important;
+  padding: 0 !important;
+  opacity: 1 !important;
+}
+/* The bookmarks strip. This file used to hide it outright, which quietly
+   overrode `browser.toolbars.bookmarks.visibility` - the pref was set to
+   "newtab" in the profile and had no effect, because the strip was display:none
+   whatever Firefox decided. Now Firefox decides: it collapses the strip on
+   every page except the new tab one, and all this does is give it a row of its
+   own to sit in.
+
+   The row it needs does not exist by default here: #navigator-toolbox was
+   turned into a single fixed-height row further up, so the strip was a flex
+   item competing with the tabs for that 36px. `flex-wrap` plus a full-width
+   basis pushes it onto a second line, and the toolbox height has to become
+   auto for that line to exist at all - which is why the height below is a
+   MINIMUM rather than a fixed size. */
+#PersonalToolbar:not([collapsed]) {
+  /* Zen does not keep this strip in #navigator-toolbox at all - it lives in
+     #zen-appcontent-navbar-container, which this file pins `position: fixed`
+     top-right because the WINDOW BUTTONS share that same box. Left there the
+     strip is trapped in a 36px box in the top-right corner, overlapping the
+     toolbar row. CSS cannot reparent it, so it is taken out of that box and
+     given a full-width bar of its own directly under the row; the window
+     buttons keep the fixed box to themselves, which is all it was for. */
+  position: fixed !important;
+  top: var(--ctab-row) !important;
+  inset-inline: 0 !important;
+  width: 100vw !important;
+  height: var(--ctab-bm) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  z-index: 9 !important;
+  padding-block: 0 !important;
+  padding-inline: 8px !important;
+  background: transparent !important;
+}
+/* and the page starts below it rather than under it. It has to be a MARGIN:
+   the panels inside the deck are `position: absolute; inset: 0` (see the note
+   on crossfading a tab switch) and an absolutely positioned child resolves
+   `top: 0` against its containing block's padding box - which includes the
+   padding - so padding on the deck moves nothing. Measured: with padding-top
+   the page still began at y=42 with the strip sitting on top of it. */
+#browser:has(#PersonalToolbar:not([collapsed])) #tabbrowser-tabpanels {
+  margin-top: var(--ctab-bm) !important;
+}
+/* Firefox writes `collapsed=""`, not `collapsed="true"` - match on the
+   attribute being PRESENT or the strip keeps a 4px sliver on every page */
+#PersonalToolbar[collapsed] { display: none !important; }
+#PersonalToolbar .bookmark-item {
+  border-radius: 8px !important;
+  padding: 3px 8px !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+#PersonalToolbar .bookmark-item:hover {
+  background-color: color-mix(in srgb, currentColor 12%, transparent) !important;
+}
+.titlebar-buttonbox-container { height: var(--ctab-row) !important; align-items: center !important; opacity: 1 !important; }
+
+/* Zen dims this bar and drops its pointer events when it is not the active
+   toolbar, and the row above it is a window-drag region: both swallow the
+   clicks on minimise / maximise / close. */
+#zen-appcontent-navbar-wrapper,
+#zen-appcontent-navbar-container,
+#zen-appcontent-navbar-wrapper .titlebar-buttonbox-container,
+#zen-appcontent-navbar-wrapper .titlebar-buttonbox,
+#zen-appcontent-navbar-wrapper .titlebar-button,
+#PanelUI-button {
+  pointer-events: auto !important;
+  -moz-window-dragging: no-drag !important;
+}
+
+/* ---- the page must not jump when the pointer reaches the window buttons ----
+   Zen keeps its top bar collapsed to --zen-element-separation (8px) and grows
+   it to --zen-toolbar-height (34px) while the pointer is on the window
+   buttons; ZenCompactMode then stamps [has-toolbar-hovered] on the tab panels
+   and zen-browser-container.css pulls the page up by the difference
+   (margin-top: calc(-1 * 34px + 8px) = -26px) so the page stays still while
+   the bar expands under it.
+   In this layout that bar is position:fixed - it never pushed the page down in
+   the first place - so the compensation is a naked 26px jump up and back. */
+#tabbrowser-tabpanels[has-toolbar-hovered] .browserSidebarContainer .browserContainer {
+  margin-top: 0 !important;
+}
+
+/* =========================================================================
+ * Ctrl+T / Ctrl+L: the floating address box
+ * =========================================================================
+ * Zen drops this box in with no entrance at all - it is a `popover=manual`
+ * element that simply appears at --zen-urlbar-top. Everything below is scoped
+ * to [zen-floating-urlbar], so the resting 280px pill in the toolbar row is
+ * untouched (see the note on the resting bar further up: it is the SAME
+ * #urlbar element in both states).
+ *
+ * The box uses the `translate` property for its own centring
+ * (translate: -50% 0%), so the entrance animates `transform` instead - the two
+ * are separate properties and compose, which is what keeps the box centred
+ * while it scales.
+ *
+ * The animation is on #urlbar itself, which only gets [open] once per opening:
+ * typing rewrites the results underneath without ever replaying it.
+ *
+ * It is deliberately NOT on --ctab-ease-in, and this is the whole reason the
+ * box used to arrive with no entrance at all "sometimes, and on some pages
+ * only the first time". --ctab-ease-in is ease-out-expo, which spends 72% of
+ * itself inside the first 40ms: measured on this very animation, opacity was
+ * already 0.946 at currentTime 50 of 220. Nothing in that is wrong - it is over
+ * before the box is on screen. The box does not exist until [open] and
+ * [zen-floating-urlbar] land TOGETHER (zen-omnibox.css only floats it when
+ * both are set, and both are set in one tick), and its first painted frame is
+ * whatever frame the browser can produce after laying out eight result rows
+ * with their favicons. One or two frames of delay is normal, and one or two
+ * frames was the entire animation - so on a quiet page you caught the tail of
+ * a fade and on a busy one the box was simply there.
+ *
+ * So this uses the same curve and the same reasoning as a tab switch further
+ * up (--ctab-ease-morph): a small ease-in buys the spread, and the movement
+ * is what is watchable, not the duration. Per 40ms of the 300ms, as a share
+ * of the whole entrance:
+ *
+ *   --ctab-ease-in @220ms      .72  .20  .06  .02          <- one blink
+ *   this curve @300ms          .13  .31  .26  .15  .09  .05  .02
+ *
+ * Being 40ms late now costs 13% of the entrance instead of 72% of it.
+ * The distance is bigger for the same reason: 8px and 3% of scale on a box
+ * that is 800px wide is not a movement, it is a flicker. */
+#urlbar[zen-floating-urlbar="true"][open] {
+  transform-origin: top center !important;
+  animation: ctab-omni-in var(--ctab-t-omni) var(--ctab-ease-morph) backwards !important;
+}
+@keyframes ctab-omni-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.94);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* the box itself: a floating card, not a flat rectangle.
+
+   OPAQUE, and the backdrop-filter is gone. On 1.23b Zen's acrylic
+   (zen.theme.acrylic-elements, on by default) painted this card
+   rgba(20, 20, 20, 0.92) and handed the remaining 8% to
+   `backdrop-filter: var(--zen-backdrop-underlay) blur(40px)`. Measured over
+   a page of 40px black/white stripes, sampling a column inside the card
+   away from any text (1.23b, window 1600x1000, card 868x328 at 366,334):
+
+     backdrop-filter: none          spread 20 / 255
+     backdrop-filter: blur(24px)    spread 20      <- what was here
+     backdrop-filter: blur(40px)    spread 20      <- Zen's own
+     backdrop-filter: blur(100px)   spread 20
+     backdrop-filter: invert(1)     spread 20      <- not a filter at all
+     background alpha .97           spread  8
+     background opaque              spread  0
+
+   Five filters that could not be told apart read as a filter that never
+   ran, and this note used to blame the top layer for it (the floating bar
+   is `popover=manual`). That was wrong. The window measured was a HEADLESS
+   one, which renders in software WebRender, and software WebRender cannot
+   filter what is behind the chrome at all - 1.23.2b says so itself, in
+   ZenUIManager._markAcrylicSupport. In a real GPU window the filter runs.
+   1.23.2b, a nested GNOME Shell at 2560x1440, same stripes, acrylic on:
+
+     backdrop-filter: none                   spread 20
+     backdrop-filter: blur(24px) saturate()  spread  5   <- what was here
+     backdrop-filter: blur(100px)            spread  4
+     background opaque (this rule)           spread  0
+
+   So what showed through on a real screen was the page smeared into a soft
+   band by the 8% the blur is handed, not hard stripes - the band you can
+   see behind the search box on any page with a light block in the middle.
+   An opaque card leaves nothing to show through in either renderer.
+
+   So the alpha goes instead. --zen-urlbar-background-base is Zen's own
+   opaque pair (white / rgb(24 24 24)) and is defined on this element by
+   #urlbar[breakout-extend], which the floating state always carries.
+
+   The outline goes with it: Zen puts `outline: 1px solid rgb(75, 75, 75)` at
+   outline-offset -1px on this box, so with the 1px border below it the card
+   had TWO hairlines - and the outline's corners resolve at 16-1 = 15px radius
+   against the border's 16px, so they part company at every corner.
+
+   1.23.2b (2026-10-09) took the acrylic off by default: the pref is now
+   zen.theme.acrylic-urlbar, a static one that is only on for Twilight
+   builds, and Zen also stamps [zen-no-acrylic] on a window drawn in
+   software. On a release build Zen's own card is already opaque, so the
+   band only comes back if that pref is turned on. The outline is still
+   drawn. Same stripes, 1.23.2b, headless 2560x1440, dark / light:
+
+                                      background             outline   spread
+     without this rule, acrylic off   rgb(24, 24, 24)        1px        0 / 0
+     without this rule, acrylic on    rgba(20, 20, 20, .92)  1px       20 / 18
+     with it, acrylic off             rgb(24, 24, 24)        none       0 / 0
+     with it, acrylic on              rgb(24, 24, 24)        none       0 / 0
+
+   ("acrylic on" = the pref set and [zen-no-acrylic] removed by hand, since
+   the measuring window is a software one.) */
+#urlbar[zen-floating-urlbar="true"][open] > .urlbar-background {
+  border-radius: 16px !important;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+  background-color: var(--zen-urlbar-background-base) !important;
+  outline: none !important;
+  box-shadow:
+    0 24px 48px -14px rgba(0, 0, 0, 0.5),
+    0 6px 18px -8px rgba(0, 0, 0, 0.38) !important;
+  backdrop-filter: none !important;
+}
+
+/* the input line and the results are separated by a hairline instead of a gap */
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView {
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent) !important;
+  padding-top: 4px !important;
+}
+
+/* the rows fan in behind the box. Firefox REUSES .urlbarView-row elements as
+   you type and only appends when the result count grows, so this plays on the
+   opening and on a genuinely new row - never on every keystroke.
+
+   Same curve as the box, and the stagger is spread over twice the ground it
+   was: the rows used to be all in by 100ms, i.e. before the box they sit in
+   had finished arriving. */
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row {
+  animation: ctab-omni-row 220ms var(--ctab-ease-morph) backwards !important;
+  border-radius: 10px !important;
+}
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(1) { animation-delay: 45ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(2) { animation-delay: 72ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(3) { animation-delay: 95ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(4) { animation-delay: 114ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(5) { animation-delay: 129ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(6) { animation-delay: 140ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(n + 7) { animation-delay: 148ms !important; }
+@keyframes ctab-omni-row {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* the selected row highlights instead of jumping */
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row .urlbarView-row-inner {
+  border-radius: 10px !important;
+  transition: background 120ms ease-out !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #urlbar[zen-floating-urlbar="true"][open],
+  #urlbar[zen-floating-urlbar="true"][open] .urlbarView-row {
+    animation: none !important;
+  }
+}
+
+/* =========================================================================
+ * Why one pixel of #nav-bar is never still
+ * =========================================================================
+ * Every entrance in this file used to be skipped at random - "sometimes it
+ * animates, sometimes it does not, and on some pages never". It is not the
+ * curve and it is not the selector. It is the browser's refresh clock.
+ *
+ * Firefox stops its refresh driver when nothing on screen is changing, and it
+ * does NOT reset the clock when it starts again: a CSS animation created by a
+ * synchronous style flush (which is exactly what Ctrl+T does - Zen sets the
+ * attributes and immediately measures the box to write --urlbar-width) is
+ * stamped with the LAST tick's time. If that tick was longer ago than the
+ * animation is long, the very first frame the animation is ever sampled on is
+ * already past its end, and Gecko fires animationstart and animationend in the
+ * same tick. Measured on this build, on the 300ms box entrance:
+ *
+ *   clock idle 868ms  ->  start and end in the SAME millisecond,
+ *                         animation alive for 0 of the next 97 frames
+ *   clock fresh (1ms) ->  start to end 285ms apart, alive for 42 frames,
+ *                         currentTime stepping 12, 24, 30, 36, 48 ...
+ *
+ * So the rule is simply: if the browser has not painted anything for longer
+ * than the animation lasts, there is no animation. That is the whole reason
+ * clicking "+" always worked and Ctrl+T often did not - reaching for the mouse
+ * repaints the row and refreshes the clock, while a keyboard shortcut on a
+ * page that has finished loading does not.
+ *
+ * The only lever a stylesheet has over that clock is to keep it running, and
+ * the only thing that keeps it running is an animation Gecko considers worth
+ * sampling. Measured, clock lag after five seconds of complete quiet:
+ *
+ *   nothing                                     58 191 ms
+ *   a custom property (--x: 0 -> 1)             64 576 ms   throttled, it
+ *                                                           changes nothing
+ *   opacity .999 -> 1                            5 590 ms   runs on the
+ *                                                           compositor, the
+ *                                                           main thread still
+ *                                                           sleeps
+ *   background-color on a 1px ::after            12 565 ms   XUL box, the
+ *                                                           pseudo never
+ *                                                           rendered
+ *   outline-color on a real 1px outline              26 ms   <- this one
+ *
+ * So: a 1px transparent inset outline on #nav-bar whose colour cycles between
+ * 0% and 0.4% black. It is invisible and it changes no layout.
+ *
+ * It is ON, and the timing function is the whole trick. `steps(2)` instead of
+ * `linear`: the animation is still active and still sampled on every tick -
+ * which is all the clock needs - but its VALUE only changes twice per cycle,
+ * so there is nothing to repaint in between. Measured in a driven window,
+ * clock lag after 3.5s of complete quiet and paints during 1.5s of idle:
+ *
+ *   nothing                       3491 ms lag    0 paints
+ *   linear   on #nav-bar             6 ms lag    3 paints
+ *   steps(2) on #nav-bar             2 ms lag    2 paints   <- this one
+ *   steps(2) on #PanelUI-menu-button 5 ms lag    1 paint
+ *
+ * Worth correcting an earlier claim in this file: the linear version was NOT
+ * compositing the whole window every frame. That was inferred, never measured,
+ * and the measurement above says three paints in a second and a half. The real
+ * cost of either version is a refresh tick and one element's style sample per
+ * frame, and steps(2) is simply the cheaper of two cheap things.
+ *
+ * It runs in every window, focused or not. It used to be guarded with
+ * `:not(:-moz-window-inactive)` and that guard is gone on purpose: a window is
+ * "inactive" more often than it looks - a driven window that has been focused
+ * and put fullscreen still reported `:-moz-window-inactive` as true - and a
+ * keeper that quietly stops is worse than useless, because what it leaves
+ * behind is exactly the "it animated once and never again" bug. At two paints
+ * per second and a half it is not worth guarding.
+ *
+ * It is off entirely under prefers-reduced-motion. Delete the rule to be rid of it -
+ * everything else keeps working, entrances just go back to being skipped
+ * whenever the browser has been quiet for a moment, which is exactly the
+ * "Ctrl+T does not animate any more after I open a new tab" complaint. */
+@keyframes ctab-clock {
+  from { outline-color: rgba(0, 0, 0, 0); }
+  50%  { outline-color: rgba(0, 0, 0, 0.004); }
+  to   { outline-color: rgba(0, 0, 0, 0); }
+}
+#nav-bar {
+  outline: 1px solid transparent !important;
+  outline-offset: -1px !important;
+  animation: ctab-clock 4s steps(2) infinite !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #nav-bar { animation: none !important; }
+}
+
+/* =========================================================================
+ * Ctrl+Tab: the tab switcher
+ * =========================================================================
+ * This panel is Firefox's, not Zen's (#ctrlTab-panel, ctrlTab.css), and it
+ * only exists when browser.ctrlTab.sortByRecentlyUsed is on. Three things
+ * about it are not obvious, and all three shape everything below.
+ *
+ * 1. The panel is a screen-wide strip BY CONSTRUCTION, and it cannot simply be
+ *    made narrower. browser-ctrlTab.js `_openPanel()` does:
+ *
+ *      canvasWidth = ceil(screen.availWidth * 0.85 / 7)   // always /7
+ *      width = min(availWidth * 0.99, canvasWidth * 1.25 * tabPreviewCount)
+ *      panel.style.width = width + "px"
+ *      panel.openPopupAtScreen(availLeft + (availWidth - width) / 2, ...)
+ *
+ *    so with seven tabs on a 2560px screen it writes an INLINE width of about
+ *    2530px and then positions the popup from that same number. Overriding the
+ *    width from CSS leaves the popup anchored where a 2530px box would have
+ *    started - i.e. hard against the left edge. So the popup frame is made
+ *    invisible instead, and #ctrlTab-previews becomes the visible card,
+ *    centred inside it. The frame stays screen-wide and nobody can tell.
+ *
+ * 2. Rounding the cards is a fight with the mod, not with Gecko. An INLINE
+ *    `borderRadius = "44px"` on .ctrlTab-preview reads back `0px`, which once
+ *    looked like border-radius being unsupported on these buttons. It is not:
+ *    point 3 below declares `border-radius: var(--psu-...) !important` with an
+ *    unresolvable var, and an author `!important` beats a plain inline style.
+ *    The same declaration made from THIS file wins, because a USER-origin
+ *    `!important` outranks an author one - measured in a driven profile, 44px,
+ *    taken. So the cards are rounded with border-radius.
+ *
+ *    That is worth more than tidiness. `clip-path: inset(0 round Npx)` rounds
+ *    them too, and this file used to use it on four elements per card - the
+ *    card, the thumbnail box, the <canvas> inside it, and the favicon. A
+ *    rounded clip-path is a MASK: the subtree is drawn to an intermediate
+ *    surface and composited back through it, and there were up to 28 of those,
+ *    nested, over seven ~310px thumbnails, rebuilt on every paint of the
+ *    panel. border-radius takes the rounded-rect clip fast path instead.
+ *    Measured while stepping through the cards with Ctrl held: a 17.0ms median
+ *    frame became 8.8ms.
+ *
+ *    The focus ring stays an `inset` shadow anyway. It no longer has to be
+ *    (border-radius does not clip a box-shadow the way a clip-path does), but
+ *    a ring painted outside the card would sit in the gap and touch its
+ *    neighbour.
+ *
+ * 3. If the "Better CtrlTab Panel" mod is installed (chrome/zen-themes/,
+ *    prefs psu.better_ctrltab.*), most of what it declares is dead: its
+ *    palette and metrics live in a commented-out /** ... /**\/ block and it
+ *    expects Zen to inject the pref values, so `var(--psu-better_ctrltab-*)`
+ *    resolves to nothing - and an unresolvable var makes the whole declaration
+ *    invalid at computed-value time, which is not "ignored", it is "computes
+ *    to the initial value". That is where the flat grey sheet, the zero
+ *    padding and the square corners came from: its rules WIN on specificity
+ *    and then evaluate to nothing. Everything here therefore does two things -
+ *    it outranks those selectors, and it passes each value through
+ *    `var(--psu-..., fallback)` so the mod still wins whenever it does
+ *    resolve. */
+:root #ctrlTab-panel {
+  color-scheme: dark !important;
+  /* the frame is only a positioner now */
+  --panel-background: transparent !important;
+  --panel-background-color: transparent !important;
+  --panel-border-color: transparent !important;
+  --panel-shadow: none !important;
+  --panel-padding: 0 !important;
+  --panel-color: rgba(255, 255, 255, 0.92) !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+
+/* THE card: dark, rounded, centred in a frame far wider than itself.
+   ONE row, and that is not a style choice either. ctrlTab.js positions the
+   popup vertically at `(availHeight - (canvasHeight * 1.25 + 75)) / 2`, which
+   is the height of a SINGLE row of thumbnails - so the moment the cards wrap
+   the box is taller than the estimate, grows downward from a top computed for
+   a short panel, and sits visibly below centre. Nothing in CSS moves a popup
+   that JS has already placed.
+
+   No backdrop-filter, and no entrance that holds anything invisible. What
+   made this panel feel like the browser had stalled was measured, one thing
+   at a time:
+
+     backdrop-filter: blur(28px)   blurring a ~1800x640 region of a
+                                   screen-wide transparent popup on every
+                                   frame, on top of seven scaled canvases,
+                                   for a card that is 92% opaque anyway.
+                                   GONE, and not coming back.
+     four rounded clip-paths       per card - see note 2. Masks, up to 28 of
+                                   them nested. GONE, border-radius does it.
+     a staggered per-card fade     the real one. Firefox already waits 200ms
+                                   before it shows this panel at all (so that
+                                   a quick Ctrl+Tab just flips back), and the
+                                   stagger then held the cards invisible for
+                                   ANOTHER 325ms measured from popupshown.
+                                   Half a second after the key before there
+                                   was anything to look at.
+
+   The entrance below is what replaced that: ONE fade, on this box only, 60ms,
+   with NO hold. Seven per-card animations became one, nothing is staggered -
+   and the hold that the menus keep is deliberately absent here (2026-08-25,
+   the owner: "the panel must show up faster"). A popup's first painted frame
+   is several frames after it opens, so a hold-less 60ms fade is mostly or
+   fully over by the time the window is on screen: the card appears at full
+   opacity on its first real frame, which is the fastest CSS can make it.
+   Firefox's own 200ms setTimeout before _openPanel() (browser-ctrlTab.js,
+   hard-coded, no pref) still runs before any of this and can only be removed
+   by patching /opt/zen.
+
+   `zoom` is back too, because the cards are what you are reading. It is the
+   only way to change their size: ctrlTab.js hard-codes `canvasWidth =
+   availWidth * 0.85 / 7`. It resamples the thumbnails at paint time, which is
+   a cost paid per paint and not per frame - with the masks gone it no longer
+   shows. --ctab-switch-zoom carries the cap. */
+:root #ctrlTab-panel #ctrlTab-previews {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  padding: 12px !important;
+  width: max-content !important;
+  align-self: center !important;
+  zoom: var(--ctab-switch-zoom) !important;
+  animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph)
+             var(--ctab-d-panel) backwards !important;
+  margin: 0 auto !important;
+  background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
+  border-radius: var(--psu-roundness-zoomed, 24px) !important;
+  box-shadow:
+    0 14px 30px -16px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+
+@keyframes ctab-ctrltab-box {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* seven cards already fill the frame `availWidth * 0.99` gives them, so they
+   get the smaller scale or the ends are clipped by the popup window */
+:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(7):not([hidden])) #ctrlTab-previews {
+  zoom: 1.05 !important;
+}
+
+/* the cards. The selected one grows, and both it and the one it took the
+   selection from animate, so holding Tab reads as the highlight travelling
+   along the row instead of teleporting. `scale` and not `transform`, because
+   `transform` is the one property Zen's own code writes on chrome elements
+   and a transition on it fights whatever set it.
+
+   The growth is small on purpose, and not to save frames - see the block
+   below for what an animation in here actually costs. It is small because the
+   cards sit in a 10px gap: 1.035 of a 348px card spends 6px of that gap on
+   each side, so it never touches its neighbour or the 12px the box is padded
+   by, and no card at either end can be clipped by the popup window. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 18px !important;
+  clip-path: none !important;
+  transition: scale var(--ctab-t-switch) var(--ctab-ease-morph) !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus {
+  scale: var(--ctab-switch-pop) !important;
+}
+
+/* the highlight surface. It is a background rather than a border because the
+   card is rounded and a border would be a second rounded edge inside the
+   first. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-preview-inner {
+  margin: 0 !important;
+  padding: 10px !important;
+  border: none !important;
+  background-color: transparent !important;
+  text-shadow: none !important;
+  /* the FILL fades and the ring does not, which is not a taste call: an
+     animated `box-shadow` is the one property here that costs real frames.
+     Measured over six flips each, sampling the 150ms after every one, on a
+     165Hz screen where a flip should collect ~26 frames:
+
+       no animation at all ............ 25.7 frames   p90 6.3ms
+       any one property animating ..... 22.3 frames   p90 12.4ms
+       ...plus the ring ............... 18.5 frames   p90 16.5ms, max 37ms
+
+     The middle row is a flat cost - it does not matter WHICH property or how
+     many of them, one dropped frame in four is the price of having an
+     animation in this popup at all. box-shadow is the exception that doubles
+     it, so the ring snaps on instead, which also gives the keypress an
+     instant acknowledgement while the fill and the scale carry the motion. */
+  transition: background-color var(--ctab-t-switch) ease-out !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-preview-inner {
+  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
+  box-shadow: inset 0 0 0 1.5px
+    color-mix(in srgb, var(--zen-primary-color, #7aa2ff) 70%, transparent) !important;
+}
+
+/* the thumbnail. One rounded clip, on the image itself - the box around it
+   does not need a second one. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas {
+  margin: 0 0 8px 0 !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > canvas,
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > img {
+  border-radius: 12px !important;
+  clip-path: none !important;
+}
+
+/* the title. Firefox draws it bold with two text-shadows because the panel
+   used to be a translucent grey sheet over the page and the text had to
+   survive whatever was behind it; on a dark card that reads as a halo. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-label {
+  margin: 0 !important;
+  padding: 0 2px !important;
+  font-weight: 500 !important;
+  text-shadow: none !important;
+  opacity: 0.62 !important;
+  transition: opacity var(--ctab-t-switch) ease-out !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-label {
+  opacity: 1 !important;
+}
+
+/* the favicon badge, sitting ON the bottom-right of the thumbnail instead of
+   being a white #f9f9fa square punched into a dark card */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-favicon[src] {
+  position: static !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  padding: 5px !important;
+  margin: -42px 6px 0 0 !important;
+  background-color: rgba(24, 24, 28, 0.92) !important;
+  border-radius: 10px !important;
+  clip-path: none !important;
+  box-shadow: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root #ctrlTab-panel #ctrlTab-previews { animation: none !important; }
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview,
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-preview-inner,
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-label {
+    transition: none !important;
+  }
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus { scale: none !important; }
+}
+
+/* "show all tabs" - a sibling of the card, so it gets its own pill */
+:root #ctrlTab-panel #ctrlTab-showAll-container {
+  justify-content: center !important;
+  margin: 10px auto 0 !important;
+}
+:root #ctrlTab-panel #ctrlTab-showAll {
+  border: none !important;
+  border-radius: 999px !important;
+  clip-path: none !important;
+  padding: 6px 16px !important;
+  background-color: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
+  text-shadow: none !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+:root #ctrlTab-panel #ctrlTab-showAll:focus,
+:root #ctrlTab-panel #ctrlTab-showAll:hover {
+  background-color: color-mix(in srgb, currentColor 20%, transparent) !important;
+}
+
+/* =========================================================================
+ * Menus and panels
+ * =========================================================================
+ * The right-click menu, the app menu behind the three dots, the bookmarks and
+ * history menus, the extension panels.
+ *
+ * What a menu is made of here, because none of it is where you would expect:
+ * the `menupopup` element itself paints NOTHING (measured: transparent, radius
+ * 0, padding 0). The visible box is an `<arrowscrollbox part="arrowscrollbox
+ * content">` inside the popup's shadow DOM, and a USER-origin sheet cannot
+ * reach it - `menupopup::part(content) { padding: 21px }` from this file
+ * leaves the part at 5px, which confirms the older ::part finding. The way in
+ * is inherited custom properties: they cross into the shadow tree and the part
+ * reads them, so `--panel-border-radius` and `--panel-padding` set here DO
+ * land on that box (measured 14px / 5px before this pass). The menu ITEMS are
+ * ordinary light DOM and take rules directly.
+ *
+ * The same split decides what can move. **A popup frame cannot be animated at
+ * all**: an `animation` on `menupopup`, and one on `::part(content)`, both
+ * produce zero entries in `getAnimations()` - Gecko simply does not run
+ * animations on a popup's own frame, which is the real content of the older
+ * "menus cannot be animated" note. Its CHILDREN animate perfectly (verified by
+ * scrubbing: opacity 0 -> 1, transform responding), and because Gecko destroys
+ * a popup's frames on close and rebuilds them on open, that entrance replays
+ * every single time the menu is opened. So the box arrives instantly and its
+ * contents fan in behind it, which is what reads as the menu opening.
+ *
+ * Closing is not animated and cannot be: the popup is torn down synchronously,
+ * so there is no state left to animate out of.
+ *
+ * Colours are deliberately NOT set. Zen's theme owns those, and a user sheet
+ * that hardcodes menu backgrounds stops matching the browser the moment the
+ * theme changes. Everything here is geometry, spacing, motion and a hover
+ * response derived from `currentColor`. */
+
+/* ---- the box ---- */
+menupopup,
+panel[type="arrow"],
+#appMenu-popup,
+#widget-overflow,
+#unified-extensions-panel,
+#protections-popup,
+#identity-popup,
+#permission-popup {
+  --panel-border-radius: 16px !important;
+  --panel-border-color: color-mix(in srgb, currentColor 12%, transparent) !important;
+  --panel-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.55),
+                  0 6px 18px -8px rgba(0, 0, 0, 0.4) !important;
+  /* Zen's own knobs for the rows inside a panel - the supported route, and
+     the one the toolkit reads from inside the shadow tree */
+  --arrowpanel-menuitem-border-radius: 10px !important;
+  --arrowpanel-menuitem-padding-block: 8px !important;
+  --uc-arrowpanel-menuitem-margin-inline: 6px !important;
+  --panel-separator-margin-vertical: 5px !important;
+}
+menupopup {
+  --panel-padding: 7px 6px !important;
+  --menuitem-padding: 7px !important;
+}
+
+/* ---- the rows ----
+   The highlight is inset and rounded, which is most of the difference between
+   "a list of commands" and "a menu": a full-bleed square highlight is what
+   makes a menu read as a system menu from a decade ago. The inset is a margin
+   on the row rather than padding on the popup, so submenu arrows and checkmarks
+   still sit where the platform puts them. */
+menupopup > menuitem,
+menupopup > menu,
+menupopup > menucaption {
+  border-radius: 10px !important;
+  margin-inline: 4px !important;
+  padding-block: 7px !important;
+  transition:
+    background-color var(--ctab-t-fast) ease-out,
+    color var(--ctab-t-fast) ease-out !important;
+}
+menupopup > menuitem[_moz-menuactive="true"]:not([disabled="true"]),
+menupopup > menu[_moz-menuactive="true"]:not([disabled="true"]) {
+  background-color: color-mix(in srgb, currentColor 16%, transparent) !important;
+}
+menupopup > menuitem[disabled="true"],
+menupopup > menu[disabled="true"] {
+  opacity: 0.45 !important;
+}
+
+/* the back / forward / reload / bookmark strip at the top of a right-click
+   menu lives in a menugroup, so its children are not direct children of the
+   popup and the rules above do not reach them */
+menupopup menugroup > menuitem {
+  border-radius: 9px !important;
+  margin-inline: 3px !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+menupopup menugroup > menuitem[_moz-menuactive="true"]:not([disabled="true"]) {
+  background-color: color-mix(in srgb, currentColor 16%, transparent) !important;
+}
+
+/* ---- separators: a grouping cue, not a rule drawn across the menu ---- */
+menupopup > menuseparator {
+  appearance: none !important;
+  border: none !important;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent) !important;
+  margin-block: 6px !important;
+  margin-inline: 12px !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+}
+
+/* ---- panel rows (the app menu, the extensions panel: anything with
+   .subviewbutton) get the same treatment ---- */
+panel .subviewbutton,
+panel toolbarbutton.subviewbutton,
+#appMenu-popup toolbarbutton {
+  border-radius: 10px !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+panel .subviewbutton:hover:not([disabled="true"]),
+panel toolbarbutton.subviewbutton:hover:not([disabled="true"]) {
+  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
+}
+panel toolbarseparator {
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent) !important;
+  margin-inline: 12px !important;
+}
+
+/* ---- opening ----
+   The app menu, the extension panels and anything else built on <panel> fade
+   their rows in on EVERY open. A right-click menu does not, and cannot, and
+   this is the measurement that settles it - it is not the refresh clock and it
+   is not the selector.
+
+   A `menupopup` keeps its layout after the first time it is opened. Measured
+   on both #tabContextMenu and #contentAreaContextMenu: open, close, and the
+   rows still report a real width (174px) with the popup shut, so their frames
+   were never destroyed. A CSS animation is created when an element starts
+   being rendered, so it is created ONCE - open #1 has `getAnimations().length
+   == 1` and opacity 0, opens #2..#5 have 0 animations and opacity 1. Nothing
+   restarts it, because nothing about those rows changes on the second open: a
+   MutationObserver over two full open/close cycles caught exactly one
+   attribute on the popup itself, `hasbeenopened="true"`, and it is sticky.
+   There is no per-open state in the DOM to key an animation on.
+
+   A <panel> is the opposite: Gecko adds `animate` and `panelopen` on open and
+   removes both on close, and its rows genuinely re-animate - verified over
+   three consecutive opens of #appMenu-popup, `anims=1` and opacity ~0.01 each
+   time. So the rule below is scoped to panelviews only. An animation that runs
+   on the first right-click of a session and never again is worse than none:
+   that is precisely the "it only happens once" complaint.
+
+   (Keying it on `menupopup:hover` does re-arm it, and was rejected: hover goes
+   false the moment the pointer leaves the open menu and true again when it
+   comes back, so the rows would fade in a second time in the middle of using
+   it.)
+
+   The 30ms hold is not padding: a popup's first painted frame lands several
+   frames after it opens, so without a hold the fade is over before the window
+   is on screen and nothing appears to animate. Do NOT copy that hold onto the
+   floating address box - that one is `popover=manual`, in-document, and has no
+   window to map.
+
+   Closing is not animated and cannot be: an `animation` on `menupopup` and one
+   on `menupopup::part(content)` both produce zero entries in
+   `getAnimations()`, and the popup is torn down synchronously anyway. */
+panelview .panel-subview-body > * {
+  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph)
+             var(--ctab-d-menu) backwards !important;
+}
+@keyframes ctab-menu-row {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  panelview .panel-subview-body > * { animation: none !important; }
+}
+
+/* =========================================================================
+ * The icons that never leave the address bar
+ * =========================================================================
+ * Firefox keeps two kinds of icon in and around the address bar and they
+ * behave completely differently, which is why one of them appears to be stuck:
+ *
+ *   - TRANSIENT anchors, in #notification-popup-box: the key that a "save this
+ *     password?" prompt hangs off, the camera, the location pin. Each exists
+ *     only while its prompt is up and takes itself away afterwards. Nothing
+ *     here touches them - they are already the behaviour that was asked for.
+ *
+ *   - PERMANENT state icons, in #identity-box: #identity-permission-box is a
+ *     KEY (permissions.svg, tooltip "You have granted this website additional
+ *     permissions") and it stays for as long as the site holds any permission
+ *     you have ever granted it. Say yes to notifications once and that key is
+ *     on that site forever. That is the one that never goes away.
+ *
+ * Hiding it loses nothing: the permissions it stands for are all listed behind
+ * the padlock, which is right next to it. It is not MOVED to the right-hand
+ * side because every permission doorhanger anchors to this element - move the
+ * anchor and you move the arrow of every popup that points at it.
+ *
+ * The downloads button is not a CSS problem at all: Firefox already appears it
+ * on the first download and takes it away when the list is emptied, under
+ * `browser.download.autohideButton`, which user.js now sets explicitly. */
+#identity-box #identity-permission-box {
+  display: none !important;
+}
+
+/* The other candidate for "the key", in case the one you are seeing is this:
+   #login-fill-button is the key Firefox puts INSIDE the address bar when the
+   page has a login form it has a saved password for. This keeps it, but only
+   while the address bar is actually being used. Delete this rule to have it
+   back all the time, or copy the `display: none` above onto it to be rid of
+   it entirely. */
+#urlbar:not([focused]):not([open]) #login-fill-button {
+  display: none !important;
+}
+
+/* =========================================================================
+ * Private windows
+ * =========================================================================
+ * Two separate problems live here.
+ *
+ * 1. The tab strip. Fixed further up, at .workspace-arrowscrollbox: a private
+ *    window builds its space early enough that Zen stamps orient="horizontal"
+ *    on it, and the sideways writing-mode trick then turned that row into a
+ *    column and pushed every tab a row below the toolbar.
+ *
+ * 2. The colour. Zen tints a private window with --zen-primary-color
+ *    rgb(11, 10, 11) (zen-theme.css), which on a dark theme is the same black
+ *    as a normal window - there is nothing to tell the two apart. The accent
+ *    below (--ctab-private, set at the top of this file) paints the window
+ *    background, the address pill, the tab chips and a hairline over the page,
+ *    so a private window is obvious without a banner.
+ *
+ * Both attributes exist on the root: [zen-private-window="true"] is Zen's
+ * (ZenSpaceManager.init) and [privatebrowsingmode="temporary"] is Firefox's;
+ * either one alone is enough, so both are matched. */
+:root:is([zen-private-window="true"], [privatebrowsingmode="temporary"]) {
+  --zen-primary-color: rgb(var(--ctab-private)) !important;
+  --zen-main-browser-background:
+    color-mix(in srgb, rgb(var(--ctab-private)) 13%, rgb(18, 16, 26)) !important;
+  --zen-main-browser-background-toolbar: var(--zen-main-browser-background) !important;
+  --zen-themed-toolbar-bg-transparent: var(--zen-main-browser-background) !important;
+
+  /* the address pill */
+  & #nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
+    & .urlbar-background {
+      border-color: rgba(var(--ctab-private), 0.4) !important;
+      background: rgba(var(--ctab-private), 0.14) !important;
+    }
+    &:hover .urlbar-background {
+      background: rgba(var(--ctab-private), 0.22) !important;
+    }
+  }
+
+  /* the tab chips */
+  & .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-background {
+    background: rgba(var(--ctab-private), 0.16) !important;
+  }
+  & .tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-background {
+    background: rgba(var(--ctab-private), 0.28) !important;
+  }
+  & .tabbrowser-tab:is([selected], [visuallyselected]) .tab-background {
+    background: rgba(var(--ctab-private), 0.42) !important;
+    box-shadow: inset 0 0 0 1px rgba(var(--ctab-private), 0.5) !important;
+  }
+  & #tabs-newtab-button {
+    background: rgba(var(--ctab-private), 0.16) !important;
+  }
+  & #tabs-newtab-button:hover {
+    background: rgba(var(--ctab-private), 0.3) !important;
+  }
+
+  /* the line that separates the row from the page. It sits on the content
+     wrapper, not on #navigator-toolbox: the toolbox stops 158px short of the
+     right edge (it would swallow the window buttons otherwise), so a border
+     there would stop short of the corner too. */
+  & #zen-appcontent-wrapper {
+    border-top: 1px solid rgba(var(--ctab-private), 0.55) !important;
+  }
+}
+
+/* The window background has to be painted, not inherited from a variable.
+   zen-browser-ui.css asks for var(--zen-themed-toolbar-bg-transparent) here,
+   but Firefox's built-in dark theme wins that declaration and paints
+   rgb(34, 34, 38) - measured identical in a normal and a private window, which
+   is exactly the "no difference" being fixed. userChrome.css is USER origin,
+   so this !important outranks any author rule and ends the argument. */
+:root:is([zen-private-window="true"], [privatebrowsingmode="temporary"]) {
+  & #zen-main-app-wrapper,
+  & .zen-toolbar-background {
+    background: var(--zen-main-browser-background) !important;
+  }
+}
+
+/* =========================================================================
+ * Everything else that moves
+ * =========================================================================
+ * What is NOT here, and why: menus and panels (the app menu, the tab context
+ * menu, the extensions panel). On Linux each of those is its own OS-level
+ * popup window, and the two ways to animate one are both closed from here -
+ * `panel::part(content)` is not honoured from a USER-origin stylesheet
+ * (verified: an `outline` set through ::part on #tabContextMenu's content part
+ * never reached it, the element kept the initial `medium` width), and
+ * `-moz-window-transform` / `-moz-window-opacity` are not supported in this
+ * build (CSS.supports says false for both). Everything below is in-document,
+ * so it animates. */
+
+/* ---- press feedback on the buttons in the row ----
+   The icon scales, not the button: the button IS the hit target and shrinking
+   it would move its own edges out from under the pointer mid-click. */
+#zen-sidebar-top-buttons toolbarbutton .toolbarbutton-icon,
+#zen-sidebar-foot-buttons toolbarbutton .toolbarbutton-icon,
+#PanelUI-button .toolbarbutton-icon,
+#tabs-newtab-button .toolbarbutton-icon {
+  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+#zen-sidebar-top-buttons toolbarbutton:active .toolbarbutton-icon,
+#zen-sidebar-foot-buttons toolbarbutton:active .toolbarbutton-icon,
+#PanelUI-button:active .toolbarbutton-icon,
+#tabs-newtab-button:active .toolbarbutton-icon {
+  transform: scale(0.84) !important;
+}
+
+/* the "+" answers the press with the whole chip, since it has no hit area to
+   lose - it is 26px of padding around a 14px glyph */
+#tabs-newtab-button {
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    opacity var(--ctab-t-fast) ease-out,
+    transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+#tabs-newtab-button:active { transform: scale(0.9) !important; }
+
+/* ---- the X on the current tab ---- */
+.tabbrowser-tab .tab-close-button {
+  border-radius: 6px !important;
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    opacity var(--ctab-t-fast) ease-out,
+    transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+.tabbrowser-tab .tab-close-button:hover {
+  background: color-mix(in srgb, currentColor 20%, transparent) !important;
+}
+.tabbrowser-tab .tab-close-button:active { transform: scale(0.85) !important; }
+
+/* ---- the favicon ----
+   A chip is nothing but its favicon, so the chip's whole hover response has to
+   live on that one image. */
+.tabbrowser-tab .tab-icon-image,
+.tabbrowser-tab .tab-icon-stack {
+  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-icon-image {
+  transform: scale(1.12) !important;
+}
+.tabbrowser-tab:active .tab-icon-image { transform: scale(0.92) !important; }
+
+/* ---- essentials ---- */
+#zen-essentials .tabbrowser-tab .tab-background {
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
+}
+
+/* ---- two pages side by side (split view) ----
+   Zen already transitions the panes, but on `inset 0.09s ease-out` - fast
+   enough that resizing reads as a jump. The selector keeps Zen's two escape
+   hatches: [zen-split-resizing] while the splitter is being dragged, and
+   .zen-split-view-no-transition when it wants an instant layout, so neither
+   the drag nor a rebuild is slowed down by this. */
+#tabbrowser-tabpanels[zen-split-view="true"]:not(.zen-split-view-no-transition):not([zen-split-resizing]) > [zen-split="true"] {
+  transition: inset 240ms var(--ctab-ease) !important;
+}
+
+/* ---- switching tabs: the page, not the strip ----
+   The strip is only half of a tab switch; the other half is the 1540x604 of
+   page underneath it, and Firefox swaps that with nothing at all.
+
+   It can be crossed over, and the reason is worth writing down. Every panel
+   in #tabbrowser-tabpanels is position: absolute, inset: 0, z-index: 0 -
+   they are all laid on top of each other, all `visibility: visible`, all
+   with a transparent background. Nothing in CSS hides the ones you are not
+   looking at: what decides whether a panel paints is `renderLayers` on its
+   <browser>, which Firefox turns off per tab. Measured on a switch, exactly
+   TWO panels have it on - the tab you went to and the tab you came from,
+   because Firefox keeps the previous tab's layers warm until the new one has
+   painted (that is what `async="true"` on the deck is for).
+
+   So the page you just left is still being drawn, underneath, for the length
+   of a switch. Fading the new one up over it is a real crossfade, not a fade
+   from the background - and it costs one compositor property.
+
+   z-index is not optional. With every panel at z-index 0 the stack is DOM
+   order, and a tab's panel is created when the tab is: go to a tab OLDER
+   than the one you are on and its panel sits UNDER the one you are leaving,
+   so fading it in would show nothing until the old layers dropped and the
+   page popped in. One line puts whichever panel is current on top and the
+   direction of the switch stops mattering.
+
+   Two states are left alone. Split view puts `zen-split-view="true"` on the
+   deck and hands `deck-selected` to several panels at once - an entrance on
+   each of them would fire on every rearrange, and Zen already transitions
+   those panels on `inset` (further down). Glance stamps `.zen-glance-overlay`
+   on its overlay and marks BOTH it and the page behind it `deck-selected`
+   (ZenGlanceManager, ~line 1275), and it animates them itself. Neither gets
+   the z-index either, so their own stacking is untouched. */
+/* Why a transition and not an entrance animation. Only the arriving panel
+   gets a class added (`deck-selected`), so an @keyframes on it can only ever
+   animate one end of the switch - the page being left would still vanish on
+   the first frame, which is the same fault the strip had before flex-basis
+   went into its transition list. A transition runs in BOTH directions off the
+   same declaration: the panel losing `deck-selected` compresses and fades out
+   while the one gaining it expands and fades in, on one curve, at one time.
+   That works here only because a panel is never hidden by CSS - see above -
+   so the one being left is still a live, styleable, painting box for the
+   whole 220ms. */
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer {
+  transition:
+    transform var(--ctab-t-page) var(--ctab-ease-morph),
+    opacity var(--ctab-t-page) var(--ctab-ease-morph) !important;
+}
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer:not(.deck-selected) {
+  transform: scale(var(--ctab-page-scale)) !important;
+  opacity: 0 !important;
+}
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer.deck-selected {
+  /* z-index is not transitioned, so it changes hands on the first frame: the
+     arriving page is on top for the whole switch and the one being left
+     compresses away underneath it, whichever order they sit in the DOM. */
+  z-index: 1 !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* ---- one switch for all of it ----
+   The row is dense and every animation in this file is layout-adjacent, so
+   reduced motion turns them off rather than shortening them. Zen reads the
+   same setting for its own JS animations (gReduceMotion). */
+@media (prefers-reduced-motion: reduce) {
+  .tabbrowser-tab,
+  .tabbrowser-tab .tab-background,
+  .tabbrowser-tab .tab-label-container,
+  .tabbrowser-tab .tab-icon-image,
+  .tabbrowser-tab .tab-close-button,
+  #tabs-newtab-button,
+  #tabbrowser-tabpanels[zen-split-view="true"] > [zen-split="true"] {
+    transition: none !important;
+  }
+  /* the label is transitioned now, not animated; the X on a hovered chip is
+     the only keyframe animation left in the strip */
+  .tabbrowser-tab .tab-close-button {
+    animation: none !important;
+  }
+  #tabbrowser-tabpanels > .browserSidebarContainer {
+    transition: none !important;
+  }
+}

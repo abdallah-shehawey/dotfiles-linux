@@ -8,6 +8,7 @@ it, log out and back in.
 | Folder | What it is | Put it back |
 |---|---|---|
 | [`rounded-corners-light/`](rounded-corners-light/) | Our own extension: rounded windows, Overview previews and workspace thumbnails, with libadwaita's default shadow. Revision 7. | `./install.sh` |
+| [`workspace-wrap/`](workspace-wrap/) | Our own extension: Super+Tab (next workspace) goes from the last workspace back to the first, and Shift+Super+Tab the other way. | `./install.sh` |
 | [`chakra-switch-local/`](chakra-switch-local/) | Local fixes on top of Chakra Switch (Alt+Tab): MRU order, keyboard-only, Coverflow peek, Overview drags no longer swallowed, open-in-overview option. Re-applied after every update by a systemd path unit. | install the extension, then `./install.sh` |
 | [`performance-patches/`](performance-patches/) | Five patches that stop Blur My Shell, App Grid Tuner, RunCat, System Monitor and Vitals from working while hidden. | `./apply.py` |
 

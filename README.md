@@ -142,13 +142,14 @@ Make your desktop look modern and workflow-centric.
 
 ### GNOME Shell extensions
 
-Our own **Rounded Corners Light** extension, the local Chakra Switch fixes and
-the performance patches for Blur My Shell, App Grid Tuner, RunCat, System
+Our own **Rounded Corners Light** and **Workspace Wrap** extensions, the local
+Chakra Switch fixes and the performance patches for Blur My Shell, App Grid Tuner, RunCat, System
 Monitor and Vitals. Each folder has its own install script; see
 [gnome/extensions/README.md](gnome/extensions/README.md).
 
 ```bash
 gnome/extensions/rounded-corners-light/install.sh
+gnome/extensions/workspace-wrap/install.sh
 gnome/extensions/chakra-switch-local/install.sh
 gnome/extensions/performance-patches/apply.py
 dconf load /org/gnome/shell/extensions/ < gnome/settings/extensions.dconf

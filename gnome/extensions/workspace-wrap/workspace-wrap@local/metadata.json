@@ -1,0 +1,9 @@
+{
+  "uuid": "workspace-wrap@local",
+  "name": "Workspace Wrap",
+  "description": "Switching to the next workspace from the last one goes back to the first, and the other way round.",
+  "shell-version": [
+    "50"
+  ],
+  "version": 1
+}

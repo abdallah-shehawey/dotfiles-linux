@@ -16,3 +16,4 @@ tiling-assistant@leleat-on-github
 touchpad-gesture-customization@coooolapps.com
 unlockDialogBackground@sun.wxg@gmail.com
 Vitals@CoreCoding.com
+workspace-wrap@local

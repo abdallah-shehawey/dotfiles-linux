@@ -25,6 +25,8 @@ def reclaim(cg, amount):
 
 
 def gem(pid):
+    # A shell holds several DRM clients; the one that renders owns the most.
+    best = {}
     for fd in os.listdir(f'/proc/{pid}/fdinfo'):
         try:
             txt = open(f'/proc/{pid}/fdinfo/{fd}').read()
@@ -38,8 +40,9 @@ def gem(pid):
                     # The kernel prints the largest unit that divides the size.
                     n, *unit = val.split()
                     v[k.split('-')[1]] = int(n) * {'': 1, 'KiB': 1 << 10, 'MiB': 1 << 20}[unit[0] if unit else ''] >> 20
-            return v
-    return {}
+            if v.get('total', -1) > best.get('total', -1):
+                best = v
+    return best
 
 
 def stats(xs):

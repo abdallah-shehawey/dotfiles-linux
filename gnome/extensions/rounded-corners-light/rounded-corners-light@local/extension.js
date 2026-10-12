@@ -30,6 +30,10 @@ const SHADOW_BACKDROP = [[0, 5, 7], [0.08, 5, 5]];
 const SHADOW_RING = 0.05;
 // The focused profile is below 1/512 beyond 24px.
 const SHADOW_EXTENT = 24;
+// The effect's framebuffer covers the window's paint volume. Rounding that
+// up to this step lets a resize drag reuse one framebuffer per step of the
+// pointer instead of allocating (and pinning until a GC) one per frame.
+const VOLUME_STEP = 64;
 const FOCUS_TRANSITION_MS = 200;
 // Clutter frees an offscreen effect's framebuffer, and GNOME's window
 // snapshots, only when their JS wrapper is finalized. Collect once this much
@@ -37,6 +41,13 @@ const FOCUS_TRANSITION_MS = 200;
 // heap growth happens to trigger it (hours later, gigabytes later).
 const GARBAGE_GC_BYTES = 128 * 1024 * 1024;
 const GARBAGE_GC_DELAY_MS = 1500;
+// Past the busy limit (4x) look again this soon: a resize drag pins a
+// framebuffer per step, hundreds of megabytes a second.
+const GARBAGE_GC_URGENT_MS = 50;
+
+// Where effects report framebuffers only a collection can free; set while
+// the extension is enabled.
+let garbageSink = null;
 
 const MODE_PASS = 0;
 const MODE_CLIP = 1;
@@ -108,7 +119,7 @@ function shadowProfile(focus) {
         backdrop.map((value, j) => mix(value, SHADOW_FOCUSED[i][j])));
 }
 
-const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV7'},
+const CornerGrip = GObject.registerClass({GTypeName: 'LocalRoundedCornerGripV8'},
 class CornerGrip extends Clutter.Actor {
     _init(window, corner) {
         const cursors = [Clutter.CursorType.NW_RESIZE, Clutter.CursorType.NE_RESIZE,
@@ -168,7 +179,7 @@ class CornerGrip extends Clutter.Actor {
     }
 });
 
-const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV7'},
+const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV8'},
 class CornerEffect extends Shell.GLSLEffect {
     _init() {
         super._init();
@@ -185,6 +196,24 @@ class CornerEffect extends Shell.GLSLEffect {
 
     vfunc_build_pipeline() {
         this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, DECLARATIONS, FRAGMENT, false);
+    }
+
+    vfunc_set_enabled(enabled) {
+        // Toggling drops Clutter's framebuffer object: the next enabled paint
+        // allocates a new texture even at the same size.
+        this._replaced = true;
+        super.vfunc_set_enabled(enabled);
+    }
+
+    _noteFramebuffer(width, height) {
+        // Every paint hands this JS override its paint node, and the node
+        // keeps the texture it drew until the next garbage collection. One
+        // texture while the size holds; one more for each resize step.
+        if (this._width && (this._replaced || width !== this._width || height !== this._height))
+            garbageSink?.(this._width * this._height * 4);
+        this._replaced = false;
+        this._width = width;
+        this._height = height;
     }
 
     _set(index, values) {
@@ -211,10 +240,12 @@ class CornerEffect extends Shell.GLSLEffect {
         // Overview entry) alive until the next garbage collection. Revision 6
         // held gigabytes of them that way.
         const [ok, width, height] = this.get_target_size();
-        if (ok && width > 0 && height > 0)
+        if (ok && width > 0 && height > 0) {
+            this._noteFramebuffer(width, height);
             this._update(width, height);
-        else
+        } else {
             this._pass();
+        }
         super.vfunc_paint_target(node, context);
     }
 
@@ -297,7 +328,7 @@ class CornerEffect extends Shell.GLSLEffect {
     }
 });
 
-const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV7'},
+const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV8'},
 class PreviewContextEffect extends Clutter.Effect {
     _init(source, previewActor) {
         super._init();
@@ -333,6 +364,7 @@ export default class RoundedCornersLight extends Extension {
         this._closeGhosts = new Set();
         this._garbage = 0;
         this._gcSource = 0;
+        garbageSink = bytes => this._noteBytes(bytes);
         this._inOverview = Main.overview.visible;
         this._animating = Main.overview.animationInProgress;
         this._injections = new InjectionManager();
@@ -435,7 +467,7 @@ export default class RoundedCornersLight extends Extension {
         });
         for (const actor of global.get_window_actors())
             this._trackWindow(actor);
-        console.log('Rounded Corners Light revision 7 loaded (in-window default shadow)');
+        console.log('Rounded Corners Light revision 8 loaded (in-window default shadow)');
     }
 
     _connect(object, signal, callback, connections = this._connections) {
@@ -577,10 +609,21 @@ export default class RoundedCornersLight extends Extension {
             if (ok)
                 bytes = width * height * 4;
         }
+        this._noteBytes(bytes);
+    }
+
+    _noteBytes(bytes) {
         this._garbage += bytes;
-        if (this._garbage < GARBAGE_GC_BYTES || this._gcSource)
+        if (this._garbage < GARBAGE_GC_BYTES)
             return;
-        this._gcSource = GLib.timeout_add(GLib.PRIORITY_LOW, GARBAGE_GC_DELAY_MS, () => {
+        const delay = this._garbage >= 4 * GARBAGE_GC_BYTES ? GARBAGE_GC_URGENT_MS : GARBAGE_GC_DELAY_MS;
+        if (this._gcSource) {
+            if (delay >= this._gcDelay)
+                return;
+            GLib.source_remove(this._gcSource);
+        }
+        this._gcDelay = delay;
+        this._gcSource = GLib.timeout_add(GLib.PRIORITY_LOW, delay, () => {
             // A full collection takes a few tens of milliseconds on the main
             // thread: never during an animation, and while the user is busy
             // only once a lot has piled up.
@@ -594,6 +637,9 @@ export default class RoundedCornersLight extends Extension {
             this._gcSource = 0;
             this._garbage = 0;
             System.gc();
+            // What the collection let go of is freed at the next frame; on a
+            // still desktop that frame may be minutes away.
+            global.stage.queue_redraw();
             return GLib.SOURCE_REMOVE;
         });
     }
@@ -639,8 +685,15 @@ export default class RoundedCornersLight extends Extension {
                 record.volume = new Clutter.Actor({name: 'light-rounded-volume', reactive: false});
                 actor.insert_child_below(record.volume, null);
             }
-            record.volume.set_position(x1 - SHADOW_EXTENT, y1 - SHADOW_EXTENT);
-            record.volume.set_size(x2 - x1 + 2 * SHADOW_EXTENT, y2 - y1 + 2 * SHADOW_EXTENT);
+            // Cover the whole buffer too, so this box alone sets the volume.
+            const buffer = window.get_buffer_rect();
+            const left = Math.min(0, x1 - SHADOW_EXTENT);
+            const top = Math.min(0, y1 - SHADOW_EXTENT);
+            const right = Math.max(buffer.width, x2 + SHADOW_EXTENT);
+            const bottom = Math.max(buffer.height, y2 + SHADOW_EXTENT);
+            const step = size => Math.ceil(size / VOLUME_STEP) * VOLUME_STEP;
+            record.volume.set_position(left, top);
+            record.volume.set_size(step(right - left), step(bottom - top));
         }
         if (!window.allows_resize())
             return;
@@ -902,5 +955,6 @@ export default class RoundedCornersLight extends Extension {
         if (this._gcSource)
             GLib.source_remove(this._gcSource);
         this._gcSource = 0;
+        garbageSink = null;
     }
 }

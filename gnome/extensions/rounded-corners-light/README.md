@@ -5,7 +5,7 @@ windows, their Overview previews and the large workspace previews get a 24px
 radius, the small workspace thumbnails 5px. The shadow is libadwaita's own
 default, drawn inside the same shader. What each revision changed and why is in
 [`rounded-corners-light@local/README.md`](rounded-corners-light@local/README.md);
-the git log of this folder holds revisions 5, 6 and 7.
+the git log of this folder holds revisions 5 to 8.
 
 ```sh
 ./install.sh            # copies the extension into ~/.local/share/gnome-shell/extensions

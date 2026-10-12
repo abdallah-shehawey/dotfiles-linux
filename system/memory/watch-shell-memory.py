@@ -27,13 +27,16 @@ def shell_pid():
 
 
 def drm_fd(pid):
+    # The shell holds several DRM clients; the one that renders owns the most.
+    best, most = None, -1
     for fd in os.listdir(f'/proc/{pid}/fdinfo'):
         try:
-            if 'drm-total-system0' in open(f'/proc/{pid}/fdinfo/{fd}').read():
-                return fd
-        except OSError:
-            pass
-    return None
+            total = gem(pid, fd).get('total', -1)
+        except (OSError, KeyError, ValueError):
+            continue
+        if total > most:
+            best, most = fd, total
+    return best
 
 
 def gem(pid, fd):

@@ -6,6 +6,43 @@ workspace thumbnails get 5px, matching the native 8px selection indicator with
 its 3px border. Maximized, tiled and fullscreen windows stay square on the
 desktop and are rounded only inside their Overview preview.
 
+## Revision 8 (2026-10-12)
+
+**Revision 7 still held one framebuffer per resize step until a garbage
+collection, through the paint nodes Clutter hands its JavaScript paint hook.**
+A JS override of a paint vfunc receives that paint's node and context. GJS
+keeps both alive until their wrappers are finalized, and the node keeps the
+texture it drew. While a window keeps its size that is one texture; a
+drag-resize allocates a new framebuffer for every step. On the live session
+one drag took gnome-shell from 0.6 to 2.0GB for about 15 seconds; in a quiet
+private shell the memory stayed until a collection was forced. Without the JS
+override the same drag left nothing behind, which is how the cause was found.
+
+- The effect counts the framebuffer it gives up (a new size, or the first
+  paint after being disabled and enabled again) for the collector revision 7
+  already has. Past 128MB it collects at the next moment with no animation and
+  no input for 1.5s; past 512MB within 50ms of the next moment with no
+  animation, instead of at the next 1.5s check.
+- After a collection the extension queues one stage redraw: the textures it
+  released are freed at the next frame, and a still desktop may not draw one
+  for minutes.
+- The volume child of a Wayland window now covers the whole buffer and is
+  rounded up to 64px steps. A drag then reallocates the framebuffer once per
+  64px of pointer travel rather than on every frame. The margin it adds at the
+  right and bottom is transparent and stays inside the shadow's fade-out.
+
+Private shell, this extension only, one window resized through 120 sizes in
+2.7s, GPU memory in use (GEM total minus Mesa's purgeable cache):
+
+| | revision 7 | revision 8 |
+|---|---|---|
+| Wayland window | +1074MB, held until a collection | +260MB, freed 0.5s after the drag |
+| X11 window | +1090MB, held until a collection | +690-840MB, freed 0.7s after the drag |
+| 4x10 Overview visits, 9 windows (4 maximized) | 852-1109MB | 800-813MB |
+
+Nothing visible changes: the 16 screenshots the functional checks take are
+pixel-identical to revision 7's, and all 107 checks pass.
+
 ## Revision 7 (2026-10-12)
 
 **Revision 6 leaked GPU memory until the next JavaScript garbage collection,
@@ -106,12 +143,13 @@ Shell running with the user's real settings:
   one window redrawing at 165Hz +21% (+52%).
 
 Tests, measurements, screenshots and the revision 5 files are under
-`~/.local/state/rounded-corners/revision6-*`.
+`~/.local/state/rounded-corners/revision6-*`; revisions 7 and 8 have their own
+`revision7-20261012` and `revision8-20261012` folders next to it.
 
 ## Activation
 
 GNOME Shell imports an extension's code once per session: disabling and
 enabling does not load edited code. Log out and back in once; the journal then
-shows "Rounded Corners Light revision 7 loaded".
+shows "Rounded Corners Light revision 8 loaded".
 
 Disable with: `gnome-extensions disable rounded-corners-light@local`.

@@ -17,5 +17,24 @@ the shell the last thing to be swapped out either way.
 
 Backups go to `/etc/*.bak-20261012`; copy them back to undo.
 
-State on the laptop: run on 12 Oct (both backups exist, both files changed);
-zram still showed `lzo-rle` until the next reboot.
+State on the laptop: run 12 Oct 11:32, rebooted 11:44. After the reboot zram
+reports `zstd`, and the cgroups carry the reservation: `memory.low` is 2G on
+`user-1000.slice` and `user@1000.service`, 1.5G on `session.slice`
+(cgroup2 is mounted with `memory_recursiveprot`, so the shell inside it shares
+that protection).
+
+## Checking it: `watch-shell-memory.py`
+
+Read-only. Logs the live gnome-shell every few seconds to
+`~/.local/state/gnome-performance/shell-memory-<boot>.csv`: GPU buffers from
+the i915 fdinfo, RSS and swap, its cgroup, system swap and zram, its CPU, and
+how many times the Overview opened (the shell's `OverviewActive` D-Bus
+property). Run it as a user unit so it outlives the terminal:
+
+    systemd-run --user --unit=shell-memory-watch -p RuntimeMaxSec=31000 \
+        /usr/bin/python3 "$PWD/watch-shell-memory.py" 8 5
+    ./watch-shell-memory.py summary       # trend of the newest log
+    systemctl --user stop shell-memory-watch
+
+GPU memory that only climbs with Overview visits and window resizes, and never
+comes back down after a few idle seconds, is the leak revision 6 had.

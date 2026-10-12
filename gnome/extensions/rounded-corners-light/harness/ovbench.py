@@ -35,7 +35,9 @@ def gem(pid):
             for line in txt.splitlines():
                 k, _, val = line.partition(':')
                 if k in ('drm-total-system0', 'drm-shared-system0', 'drm-resident-system0'):
-                    v[k.split('-')[1]] = int(val.split()[0]) >> 10
+                    # The kernel prints the largest unit that divides the size.
+                    n, *unit = val.split()
+                    v[k.split('-')[1]] = int(n) * {'': 1, 'KiB': 1 << 10, 'MiB': 1 << 20}[unit[0] if unit else ''] >> 20
             return v
     return {}
 

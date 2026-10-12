@@ -6,8 +6,8 @@ Fedora's `powersave` TuneD profile sets the CPU's energy preference to
 `power`, turns turbo off and asks the firmware for `low-power`, so the cores
 stay at their lowest clocks even for a click or an Overview animation.
 
-The fix keeps everything else Power Saver does (disk, audio, Wi-Fi, USB power
-saving) and changes only how the CPU answers short bursts of work:
+The fix keeps everything else Power Saver does (audio, disk link power,
+writeback, its script) and changes only how the CPU answers short bursts of work:
 
 | GNOME mode | Charger | Battery |
 |---|---|---|

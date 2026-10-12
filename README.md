@@ -16,7 +16,12 @@ dotfiles-linux/
 │   └── autostart/      # .desktop autostart files
 │
 ├── gnome/              # GNOME Desktop Environment
-│   └── customize/      # Themes, tweaks, and UI settings
+│   ├── customize/      # Themes, tweaks, and UI settings
+│   ├── extensions/     # Our extension + local fixes/patches to others
+│   └── settings/       # dconf dump of extension settings
+│
+├── zen/                # Zen Browser
+│   └── horizontal-tabs/  # tabs on the address-bar row (userChrome.css + user.js)
 │
 ├── themes/             # Visual Assets
 │   ├── icons/          # Custom icons
@@ -26,7 +31,9 @@ dotfiles-linux/
 │   ├── grub/           # Bootloader customization
 │   ├── swap/           # Swap-file setup strategies
 │   ├── zram/           # ZRAM configuration
-│   └── auto-mount/     # Disk auto-mounting logic
+│   ├── auto-mount/     # Disk auto-mounting logic
+│   ├── power-profiles/ # Responsive Power Saver / Balanced-on-battery (TuneD)
+│   └── memory/         # Keep GNOME Shell out of swap
 │
 ├── scripts/            # Automation
 │   └── rename.sh       # Helper scripts
@@ -132,6 +139,34 @@ Make your desktop look modern and workflow-centric.
 
 - **Location:** `gnome/customize/`
 - **Guide:** [docs/gnome-customization.md](docs/gnome-customization.md)
+
+### GNOME Shell extensions
+
+Our own **Rounded Corners Light** extension, the local Chakra Switch fixes and
+the performance patches for Blur My Shell, App Grid Tuner, RunCat, System
+Monitor and Vitals. Each folder has its own install script; see
+[gnome/extensions/README.md](gnome/extensions/README.md).
+
+```bash
+gnome/extensions/rounded-corners-light/install.sh
+gnome/extensions/chakra-switch-local/install.sh
+gnome/extensions/performance-patches/apply.py
+dconf load /org/gnome/shell/extensions/ < gnome/settings/extensions.dconf
+# then log out and back in
+```
+
+## 🦓 Zen Browser
+
+Tabs on the same row as the address bar, and a new window that starts empty
+(tested on Zen 1.21.15b, 1.23b and 1.23.2b). Quit Zen completely, then:
+
+```bash
+zen/horizontal-tabs/install.sh
+```
+
+Details and measurements: [zen/horizontal-tabs/README.md](zen/horizontal-tabs/README.md).
+This used to be its own repository (`zen-horizontal-tabs`); its full history
+is merged here.
 ### ⚙️ System Optimization
 
 Low-level tweaks for performance and utility.
@@ -141,6 +176,8 @@ Low-level tweaks for performance and utility.
 |**🧷 GRUB**|Bootloader themes and config|`system/grub/`|
 |**💾 Swap/ZRAM**|Memory management optimization|`system/swap/` & `system/zram/`|
 |**🔌 Auto-mount**|Disk management guides|`system/auto-mount/`|
+|**🔋 Power profiles**|Power Saver and Balanced-on-battery that don't stutter (TuneD)|`system/power-profiles/`|
+|**🧠 Shell memory**|Keep GNOME Shell out of swap so the Overview opens fast after idle|`system/memory/`|
 
 ## 📌 Notes
 

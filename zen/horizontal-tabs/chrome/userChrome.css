@@ -1,6 +1,6 @@
 /* =========================================================================
  * Zen Browser - horizontal tabs on the same row as the URL bar
- * Tested on Zen 1.21.15b, 1.23b and 1.23.2b (Linux)
+ * Tested on Zen 1.21.15b, 1.23b, 1.23.2b and 1.23.4b (Linux)
  *
  * Requires in about:config:
  *   zen.tabs.vertical                                   = false
@@ -358,6 +358,30 @@
 #TabsToolbar { flex-direction: row !important; align-items: center !important; height: var(--ctab-strip) !important; width: auto !important; flex: 1 1 auto !important; }
 #TabsToolbar > .toolbar-items { flex: 1 1 auto !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
 #TabsToolbar-customization-target { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+/* No flexible space after the tabs. Since 1.23.4b (Firefox 158) the tab
+   toolbar's own markup leaves a <toolbarspring> right after #tabbrowser-tabs -
+   no id, not in any placement, so Customize cannot remove it - and Firefox
+   sizes every spring at flex 1, 28px to 112px. It takes its 112px out of the
+   strip whatever the tab count, while the cap on
+   .zen-workspace-normal-tabs-section further down still budgets the strip
+   out to the window buttons. With a full row the tabs are sized for a strip
+   that is 112px longer than the one they get, and the end of it is clipped.
+   Measured at 2560px wide, 18 tabs, the current one last:
+
+                              spring shown       spring hidden
+     strip (arrowscrollbox)   390..2256          390..2368
+     the spring               2256..2368         -
+     the current tab          2053..2273         2053..2273
+     its X                    2249..2267         2249..2267
+     the "+"                  2275..2305         2275..2305
+
+   The tabs land on the same x either way; only the end of the strip moves.
+   With the spring there the current tab ran 17px past it, its X was 11 of
+   its 18px under the clip, and the "+" was off the row entirely. With five
+   tabs nothing changes: 120px tabs, the current one 220px, the "+" right
+   after it. A spring dragged in from Customize goes too (the live profile
+   has customizableui-special-spring4 here): nothing in this row wants one. */
+#TabsToolbar toolbarspring { display: none !important; }
 #tabbrowser-tabs { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; width: auto !important; }
 #zen-tabs-wrapper {
   flex: 1 1 auto !important;

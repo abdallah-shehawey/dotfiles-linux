@@ -1,7 +1,7 @@
 # Zen horizontal tabs
 
 Zen Browser with the tabs on the **same row as the address bar** instead of the
-vertical sidebar. Tested on Zen 1.21.15b, 1.23b and 1.23.2b (Linux).
+vertical sidebar. Tested on Zen 1.21.15b, 1.23b, 1.23.2b and 1.23.4b (Linux).
 
 ![row](docs/row.png)
 
@@ -456,3 +456,26 @@ the titlebar is drawn. Four cards at 371px and seven at 348px, one row,
 centred to within 3px, none clipped by the popup; minimise / maximise /
 close at x=2445..2560 inside the 158px kept for them, each the element under
 its own centre, with the app menu at 2410 clear of them.
+
+### What 1.23.4b changed (2026-10-25)
+
+Firefox 158 underneath. The tab toolbar's own markup now leaves a
+`<toolbarspring>` right after `#tabbrowser-tabs` - no id, in no placement,
+so Customize cannot take it out - and Firefox sizes it at flex 1, 28 to
+112px. The cap on `.zen-workspace-normal-tabs-section` still budgets the
+strip out to the window buttons, so once the row is full the tabs are sized
+for a strip 112px longer than the one they get. Measured at 2560px, 18 tabs,
+the current one last:
+
+| | spring shown | spring hidden |
+|---|---|---|
+| strip | 390..2256 | 390..2368 |
+| current tab | 2053..2273 - 17px past the strip | inside |
+| its X | 2249..2267 - 11 of 18px clipped | inside |
+| the "+" | 2275..2305 - off the row | inside |
+
+The tabs themselves land on the same x either way. `#TabsToolbar
+toolbarspring` is `display: none` now, which also covers a spring dragged in
+from Customize (the live profile had `customizableui-special-spring4` there).
+With five tabs nothing changes: 120px tabs, the current one 220px, the "+"
+right after it.

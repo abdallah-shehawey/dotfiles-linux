@@ -1,0 +1,26 @@
+[Unit]
+Description=Follow Fn+Q power mode changes the Lenovo firmware does not announce
+After=tuned-ppd.service
+Wants=tuned-ppd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/fnq-power-mode-sync
+Restart=on-failure
+RestartSec=5
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

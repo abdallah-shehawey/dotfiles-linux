@@ -1,0 +1,137 @@
+#!/usr/bin/python3 -I
+"""Follow Fn+Q power mode changes that the firmware does not announce.
+
+On the Legion 5 15IAH7 (82RC) Fn+Q cycles the firmware thermal mode
+quiet (blue) -> balanced (white) -> performance (red) -> quiet. The firmware
+sends the GameZone thermal-mode WMI event for the first two steps but not for
+performance -> quiet (measured 7 Nov 2026: the mode reads low-power, no
+inotify event at all). tuned-ppd only follows the platform profile on that
+event, so GNOME stayed on Performance with the LED blue.
+
+This watches the platform profile and, when the hardware has changed and
+settled while tuned-ppd's ActiveProfile does not match it, sets ActiveProfile
+the way tuned-ppd itself does on a hardware change (holds are cleared, the
+choice is saved). Announced changes are already handled by tuned-ppd, so for
+those this finds nothing to do.
+
+Cost: it sleeps on inotify; it polls once a second only while the hardware is
+in performance (the one state the missing event leaves), plus a safety check
+every 30 s otherwise.
+
+It keeps the class device file (/sys/class/platform-profile/*/profile) open
+and watches that, and never opens /sys/firmware/acpi/platform_profile:
+tuned-ppd ignores hardware changes while that file is open by anyone. Keeping
+our own file open matters: sysfs only sends inotify events for a file whose
+inode is in memory, which for the ACPI file depends on tuned-ppd's open copy.
+"""
+import glob
+import logging
+import sys
+import time
+
+import dbus
+import pyinotify
+
+BUS_NAME = "org.freedesktop.UPower.PowerProfiles"
+OBJECT = "/org/freedesktop/UPower/PowerProfiles"
+TO_PPD = {"low-power": "power-saver", "balanced": "balanced", "performance": "performance"}
+FAST_POLL = 1.0
+SLOW_POLL = 30.0
+SETTLE = 0.5
+
+log = logging.getLogger("fnq-power-mode-sync")
+
+
+def class_profile_file():
+    files = sorted(glob.glob("/sys/class/platform-profile/*/profile"))
+    for path in files:
+        try:
+            with open(path.rsplit("/", 1)[0] + "/name") as f:
+                if f.read().strip() == "lenovo-wmi-gamezone":
+                    return path
+        except OSError:
+            pass
+    return files[0] if files else None
+
+
+def read(f):
+    f.seek(0)
+    return f.read().strip()
+
+
+class PowerProfiles:
+    def __init__(self):
+        self._obj = None
+
+    def _props(self):
+        if self._obj is None:
+            self._obj = dbus.SystemBus().get_object(BUS_NAME, OBJECT)
+        return dbus.Interface(self._obj, dbus.PROPERTIES_IFACE)
+
+    def active(self):
+        try:
+            return str(self._props().Get(BUS_NAME, "ActiveProfile"))
+        except dbus.DBusException as e:
+            self._obj = None
+            log.warning("cannot read ActiveProfile: %s", e.get_dbus_message())
+            return None
+
+    def set(self, profile):
+        try:
+            self._props().Set(BUS_NAME, "ActiveProfile", dbus.String(profile))
+            return True
+        except dbus.DBusException as e:
+            self._obj = None
+            log.warning("cannot set ActiveProfile to %s: %s", profile, e.get_dbus_message())
+            return False
+
+
+class Wake(pyinotify.ProcessEvent):
+    def process_default(self, event):
+        pass
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+    path = class_profile_file()
+    if path is None:
+        log.info("no platform profile on this machine; nothing to do")
+        return 0
+
+    pinned = open(path)
+    wm = pyinotify.WatchManager()
+    wm.add_watch(path, pyinotify.IN_MODIFY, proc_fun=Wake())
+    notifier = pyinotify.Notifier(wm)
+    ppd = PowerProfiles()
+
+    last = read(pinned)
+    log.info("watching %s (now %s)", path, last)
+    while True:
+        timeout = FAST_POLL if last == "performance" else SLOW_POLL
+        if notifier.check_events(int(timeout * 1000)):
+            notifier.read_events()
+            notifier.process_events()
+        try:
+            now = read(pinned)
+        except OSError as e:
+            log.warning("cannot read %s: %s", path, e)
+            time.sleep(SLOW_POLL)
+            continue
+        if now == last:
+            continue
+        # Let the firmware, tuned-ppd and TuneD finish their own reaction.
+        time.sleep(SETTLE)
+        if read(pinned) != now:
+            continue
+        last = now
+        wanted = TO_PPD.get(now)
+        if wanted is None:
+            continue
+        active = ppd.active()
+        if active is not None and active != wanted:
+            log.info("hardware is %s but the power mode is %s: switching to %s", now, active, wanted)
+            ppd.set(wanted)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

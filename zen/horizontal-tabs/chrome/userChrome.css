@@ -2317,3 +2317,204 @@ panelview .panel-subview-body > * {
     transition: none !important;
   }
 }
+
+/* =========================================================================
+ * The toolbar row is black
+ * =========================================================================
+ * Measured on the row before this section, at 2560px, dark theme:
+ *
+ *   the strip itself        #131313
+ *   the address pill        #212023   color-mix(currentColor 7%), this file
+ *   an idle tab chip        #212023   color-mix(currentColor 8%), this file
+ *   the current tab         #3a3c3d   Zen's --tab-selected-bgcolor
+ *   the "+"                 #212023   color-mix(currentColor 8%), this file
+ *   min / max / close       #282828   color-mix(currentColor 10%), browser.css
+ *
+ * The last one is not Zen's and not a choice: on Adwaita and Yaru, and only
+ * there, Firefox gives .titlebar-button > .toolbarbutton-icon a 10% circle by
+ * default. This is Fedora/GNOME, so the three window buttons sit in pills.
+ *
+ * The strip is the part with more than one candidate painter, and they stack:
+ *
+ *   #zen-main-app-wrapper        background: --zen-themed-toolbar-bg-transparent
+ *   #zen-toolbar-background      ::after / ::before, inside #titlebar
+ *   #navigator-toolbox, #titlebar, #TabsToolbar, #nav-bar   .browser-toolbar
+ *   #zen-appcontent-navbar-*     the box the window buttons live in
+ *
+ * Setting only the wrapper left the strip at #131313, so whatever is on top of
+ * it is opaque; every box above is set here instead. The list is wider than
+ * the one painter it needs and stays that way on purpose: the rects were
+ * later read out of the live chrome DOM over Marionette, and #navigator-
+ * toolbox, #titlebar and #TabsToolbar all cover the row at full width, so
+ * which one paints depends on state this file cannot see.
+ *
+ * Two of them cannot be reached through a variable. #zen-toolbar-background is
+ * an absolutely positioned div inside #titlebar whose ::after carries
+ * --zen-main-browser-background-toolbar and whose ::before carries the -old
+ * value it cross-fades from, and ZenGradientGenerator writes BOTH as INLINE
+ * custom properties on that element, so a :root override never reaches them -
+ * the pseudo-elements have to be painted directly. Both get the same colour,
+ * so the cross-fade has nothing left to fade.
+ *
+ * --zen-themed-toolbar-bg-transparent itself is left alone: zen-theme.css
+ * feeds it into a color-mix() for private and unsynced windows, and blacking
+ * it out there takes the tint with it. --zen-main-browser-background, the
+ * backdrop the page sits on, is not touched either.
+ *
+ * Everything is guarded against private windows. Those run on --ctab-private
+ * further up, which paints the same strip and the same pills purple on
+ * purpose; unguarded, every rule here lands after that section and takes the
+ * tint off. The :not():not() also outranks the :is() there, so the guard is
+ * not only about source order.
+ * ========================================================================= */
+
+:root:not([zen-private-window="true"]):not([privatebrowsingmode="temporary"]) {
+  /* the strip */
+  &,
+  & #zen-main-app-wrapper,
+  & #navigator-toolbox,
+  & #titlebar,
+  & #TabsToolbar,
+  & #nav-bar,
+  & #zen-appcontent-navbar-wrapper,
+  & #zen-appcontent-navbar-container,
+  & #PersonalToolbar {
+    background: #000 !important;
+    background-color: #000 !important;
+    background-image: none !important;
+  }
+  & #zen-toolbar-background,
+  & #zen-toolbar-background::before,
+  & #zen-toolbar-background::after {
+    background: #000 !important;
+    background-image: none !important;
+  }
+
+  /* ---- the gap the toolbox does not cover ----
+   * #navigator-toolbox stops short of the right edge to leave room for the
+   * window buttons - read in the chrome DOM, it is 0,0,2402,42 in a 2560-wide
+   * window. The app menu is parked inside that gap at right: 122px, so a 44px
+   * band of whatever is behind shows around the button: 8px either side, 4px
+   * above and below. That band is the one place in the row where neither the
+   * toolbox nor the page covers the window, and what shows through it is
+   * #zen-browser-background - position: absolute, inset: 0, z-index: 0 inside
+   * #browser, under everything, with --zen-main-browser-background on its
+   * ::after. Same construction as #zen-toolbar-background above, and the same
+   * reason the pseudo-elements have to be painted directly.
+   *
+   * This is why the "..." read as a black square in a grey frame once its own
+   * rules further down landed: the button went black and the backdrop behind
+   * it did not. The three window buttons to its right were already carrying
+   * their own fills, so this band was the only grey left in the corner.
+   *
+   * The page is unaffected - a loaded browser paints over all of this. What
+   * changes besides the band is the backdrop behind a transparent page. */
+  & #zen-browser-background,
+  & #zen-browser-background::before,
+  & #zen-browser-background::after {
+    background: #000 !important;
+    background-image: none !important;
+  }
+
+  /* ---- and so is everything sitting on it ----
+   * What replaces the fills is a 1px edge, because a chip with no fill and no
+   * edge on a black row is a loose favicon: nothing says where one tab ends
+   * and the next begins, and nothing says which one you are on. 9% on an idle
+   * chip, 22% on the current one, and it costs no fill. The window buttons get
+   * no edge - their glyphs carry them, and three rings in the corner is the
+   * clutter the black was meant to remove.
+   *
+   * Hover stays a fill, 7% over black: it is the only feedback the pointer
+   * gets on this row, and an edge that brightens is too quiet to read as an
+   * answer.
+   *
+   * To go flatter still, drop the two box-shadow lines and the border-color on
+   * .urlbar-background. The tabs become text on black. */
+
+  /* the address pill */
+  & #nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
+    & .urlbar-background {
+      background: #000 !important;
+      border-color: color-mix(in srgb, currentColor 11%, transparent) !important;
+    }
+    &:hover .urlbar-background {
+      background: color-mix(in srgb, currentColor 7%, #000) !important;
+    }
+  }
+
+  /* the tab chips */
+  & .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-background {
+    background: #000 !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 9%, transparent) !important;
+  }
+  & .tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-background {
+    background: color-mix(in srgb, currentColor 7%, #000) !important;
+  }
+  & .tabbrowser-tab:is([selected], [visuallyselected]) .tab-background {
+    background: #000 !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent) !important;
+  }
+
+  /* the "+" */
+  & #tabs-newtab-button {
+    background: #000 !important;
+  }
+  & #tabs-newtab-button:hover {
+    background: color-mix(in srgb, currentColor 7%, #000) !important;
+  }
+
+  /* minimise / maximise / close */
+  & .titlebar-button > .toolbarbutton-icon {
+    background-color: #000 !important;
+  }
+  & .titlebar-button:hover > .toolbarbutton-icon {
+    background-color: color-mix(in srgb, currentColor 12%, #000) !important;
+  }
+  & .titlebar-button:hover:active > .toolbarbutton-icon {
+    background-color: color-mix(in srgb, currentColor 22%, #000) !important;
+  }
+
+  /* the app menu, the "..." parked on the row at right: 122px.
+     It is position:fixed and outside #navigator-toolbox, so none of the
+     boxes above reach it - on a black row it was the one grey square left. */
+  & #PanelUI-button,
+  & #PanelUI-menu-button,
+  & #PanelUI-menu-button > .toolbarbutton-badge-stack,
+  & #PanelUI-menu-button .toolbarbutton-icon {
+    background: #000 !important;
+    background-color: #000 !important;
+  }
+  & #PanelUI-menu-button:hover > .toolbarbutton-badge-stack,
+  & #PanelUI-menu-button:hover .toolbarbutton-icon {
+    background-color: color-mix(in srgb, currentColor 12%, #000) !important;
+  }
+
+  /* ---- the floating search box ----
+   * Ctrl+L / Ctrl+T / a click on the pill re-uses #urlbar at a completely
+   * different size, which is why every rule on the resting pill further up
+   * excludes [zen-floating-urlbar]. The card is painted by the rule in the
+   * Ctrl+T section from --zen-urlbar-background-base, Zen's own opaque pair,
+   * which is rgb(24, 24, 24) here. Rather than set the background twice with
+   * two !importants and let source order decide, the variable is redefined on
+   * the element: that rule then paints #000 on its own, and everything it
+   * says about opacity and the acrylic band still holds.
+   *
+   * The variable is set on .urlbar-background, NOT on #urlbar. Zen declares
+   * it at zen-omnibox.css on .urlbar-background itself, so a copy on #urlbar
+   * is shadowed by the closer declaration and changes nothing - which is
+   * exactly what happened the first time this was tried. (The note in the
+   * Ctrl+T section above says #urlbar[breakout-extend] declares it; that is
+   * where the FLOATING STATE comes from, not the variable.) Zen's own rule
+   * prefers --zen-urlbar-background-transparent when the acrylic pref is on,
+   * so both names are set and the card is black either way.
+   *
+   * The result rows are deliberately NOT touched. The selection fill is the
+   * only thing saying which row Enter will open, and under arrow keys it is
+   * the only thing moving on screen; Zen's own colour for it already reads
+   * against black. An earlier version of this section cleared the row
+   * backgrounds and that is what took the selection with it. */
+  & #urlbar[zen-floating-urlbar="true"][open] > .urlbar-background {
+    --zen-urlbar-background-base: #000 !important;
+    --zen-urlbar-background-transparent: #000 !important;
+  }
+}

@@ -355,6 +355,118 @@ moves the arrow of every popup that points at it. The downloads button is not a
 CSS matter at all - `browser.download.autohideButton` in `user.js` is what
 makes it appear on the first download and leave again.
 
+## The row is black
+
+Measured on the row before this, at 2560px, dark theme:
+
+| | was | from |
+|---|---|---|
+| the strip | `#131313` | see below |
+| the address pill | `#212023` | `color-mix(currentColor 7%)`, this file |
+| an idle tab chip | `#212023` | `color-mix(currentColor 8%)`, this file |
+| the current tab | `#3a3c3d` | Zen's `--tab-selected-bgcolor` |
+| the "+" | `#212023` | `color-mix(currentColor 8%)`, this file |
+| the app menu, "..." | `#121212` | see below |
+| the band around it | `#131313` | `#zen-browser-background::after` |
+| min / max / close | `#282828` | `color-mix(currentColor 10%)`, `browser.css` |
+
+The window buttons are not Zen's doing and not a choice: on Adwaita and Yaru,
+and only there, Firefox gives `.titlebar-button > .toolbarbutton-icon` a 10%
+circle by default. This is Fedora/GNOME, so they had one.
+
+The strip is the part with more than one candidate painter, and they stack:
+`#zen-main-app-wrapper` (whose background is
+`--zen-themed-toolbar-bg-transparent`), `#zen-toolbar-background`, the four
+boxes of the row itself, and the box the window buttons live in. Setting only
+the wrapper left the strip exactly as it was, so whatever is above it is
+opaque; every box is set now. The list stays wider than the one painter it
+needs: the rects were later read out of the live chrome DOM over Marionette,
+and `#navigator-toolbox`, `#titlebar` and `#TabsToolbar` all cover the row at
+full width, so which one paints depends on state this file cannot see.
+
+Two of them cannot be reached through a variable. `#zen-toolbar-background` is
+an absolutely positioned div inside `#titlebar` whose `::after` carries
+`--zen-main-browser-background-toolbar` and whose `::before` carries the `-old`
+value it cross-fades from, and `ZenGradientGenerator` writes **both as inline
+custom properties on that element**, so a `:root` override never reaches them -
+the pseudo-elements have to be painted directly. Both get the same colour, so
+the cross-fade has nothing left to fade.
+
+The app menu needs a rule with its own name on it. In this layout
+`#PanelUI-button` is `position: fixed` at `right: 122px`, outside
+`#navigator-toolbox` entirely, so none of the boxes above reach it - on a black
+row it was the one grey square left.
+
+### The band around the app menu
+
+Blacking the button was not enough on its own: it then read as a black square
+in a grey frame, 8px either side and 4px above and below. The frame is the
+backdrop, not the button.
+
+`#navigator-toolbox` stops short of the right edge to leave room for the window
+buttons - read out of the chrome DOM, it is `0,0,2402,42` in a 2560-wide
+window, and the app menu sits at x 2410 with its own 28px. So the gap from 2402
+to the first window button is the one place in the row where neither the
+toolbar nor the page covers the window, and what shows through it is
+`#zen-browser-background`: `position: absolute`, `inset: 0`, `z-index: 0`
+inside `#browser`, under everything, carrying `--zen-main-browser-background`
+on its `::after`. Same construction as `#zen-toolbar-background`, so the
+pseudo-elements are painted directly for the same reason. The window buttons
+were already carrying their own fills, which is why this band was the only grey
+left in that corner.
+
+The page is unaffected - a loaded browser paints over all of it. What changes
+besides the band is the backdrop behind a transparent page.
+
+`--zen-themed-toolbar-bg-transparent` itself is left alone: `zen-theme.css`
+feeds it into a `color-mix()` for private and unsynced windows, and blacking it
+out there takes the tint with it.
+
+### The floating search box
+
+Ctrl+L, Ctrl+T and a click on the pill all re-use `#urlbar` at a completely
+different size, which is why every rule on the resting pill excludes
+`[zen-floating-urlbar]`. The card is painted from Zen's own opaque pair,
+`--zen-urlbar-background-base`, `rgb(24, 24, 24)` on a dark theme. Rather than
+set the background a third time and let source order decide between three
+`!important`s, the variable is redefined and the existing rules paint black on
+their own.
+
+**It has to be set on `.urlbar-background`, not on `#urlbar`.** Zen declares it
+in `zen-omnibox.css` on `.urlbar-background` itself, so a copy on `#urlbar` is
+shadowed by the closer declaration and changes nothing. Zen's rule there also
+prefers `--zen-urlbar-background-transparent` when `zen.theme.acrylic-urlbar`
+is on, so both names are set and the card is black either way. (The note in the
+Ctrl+T section about `#urlbar[breakout-extend]` is about where the floating
+*state* comes from, not where the variable is declared.)
+
+The result rows are deliberately left alone. The selection fill is the only
+thing saying which row Enter will open, and under arrow keys it is the only
+thing moving on screen; Zen's colour for it already reads against black. A
+first version of this section cleared the row backgrounds to match the card,
+and that took the selection with it.
+
+### What replaces the fills
+
+A 1px edge, 9% on an idle chip and 22% on the current one, because a chip with
+no fill and no edge on a black row is a loose favicon: nothing says where one
+tab ends and the next begins, and nothing says which one you are on. The window
+buttons get no edge - their glyphs carry them, and three rings in the corner is
+the clutter the black was meant to remove. Hover stays a fill at 7% over black,
+since it is the only feedback the pointer gets on this row and an edge that
+brightens is too quiet to read as an answer.
+
+All of it is guarded with
+`:root:not([zen-private-window="true"]):not([privatebrowsingmode="temporary"])`.
+A private window runs on `--ctab-private` (below), which paints the same strip
+and the same pills purple on purpose; unguarded, every rule here lands after
+that section and takes the tint off. The `:not():not()` also outranks the
+`:is()` there, so the guard is not only about source order.
+
+To go flatter still, drop the two `box-shadow` lines and the `border-color` on
+`.urlbar-background`. The tabs become text on black.
+
+
 ## Private windows
 
 Zen tints a private window with `--zen-primary-color: rgb(11, 10, 11)`

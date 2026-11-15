@@ -179,12 +179,15 @@ class CornerGrip extends Clutter.Actor {
     }
 });
 
-const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV8'},
-class CornerEffect extends Shell.GLSLEffect {
+const UNIFORM_NAMES = ['rcSize', 'rcBounds', 'rcRadius', 'rcMode', 'rcShadow1', 'rcShadow2'];
+const legacyShader = !!Shell.GLSLEffect;
+
+class CornerEffectImpl extends (Shell.GLSLEffect ?? Clutter.ShaderEffect) {
     _init() {
         super._init();
-        this._locations = ['rcSize', 'rcBounds', 'rcRadius', 'rcMode', 'rcShadow1', 'rcShadow2']
-            .map(name => this.get_uniform_location(name));
+        this._locations = legacyShader
+            ? UNIFORM_NAMES.map(name => this.get_uniform_location(name))
+            : UNIFORM_NAMES;
         this._values = [];
         // Window effects: geometry in the actor's own logical coordinates.
         this.geometry = null;
@@ -192,10 +195,6 @@ class CornerEffect extends Shell.GLSLEffect {
         this.paintPreview = null;
         // Thumbnails and close fades: a visible radius for the whole actor.
         this.textureRadius = undefined;
-    }
-
-    vfunc_build_pipeline() {
-        this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, DECLARATIONS, FRAGMENT, false);
     }
 
     vfunc_set_enabled(enabled) {
@@ -326,7 +325,20 @@ class CornerEffect extends Shell.GLSLEffect {
             this._set(5, [a2, s2 * scale, 1 / (g2 * scale), scale]);
         }
     }
-});
+}
+
+// GNOME 51 moved the shader implementation into Clutter. The snippet's post
+// code preserves the previous non-replacing GLSLEffect hook and texture sample.
+if (legacyShader) {
+    Object.defineProperty(CornerEffectImpl.prototype, 'vfunc_build_pipeline', {value: function () {
+        this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, DECLARATIONS, FRAGMENT, false);
+    }});
+} else {
+    Object.defineProperty(CornerEffectImpl.prototype, 'vfunc_get_static_snippet', {value: function () {
+        return Cogl.Snippet.new(Cogl.SnippetHook.FRAGMENT, DECLARATIONS, FRAGMENT);
+    }});
+}
+const CornerEffect = GObject.registerClass({GTypeName: 'LocalLightCornerEffectV9'}, CornerEffectImpl);
 
 const PreviewContextEffect = GObject.registerClass({GTypeName: 'LocalRoundedPreviewContextV8'},
 class PreviewContextEffect extends Clutter.Effect {
@@ -467,7 +479,7 @@ export default class RoundedCornersLight extends Extension {
         });
         for (const actor of global.get_window_actors())
             this._trackWindow(actor);
-        console.log('Rounded Corners Light revision 8 loaded (in-window default shadow)');
+        console.log('Rounded Corners Light revision 9 loaded (in-window default shadow)');
     }
 
     _connect(object, signal, callback, connections = this._connections) {

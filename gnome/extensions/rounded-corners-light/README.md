@@ -1,11 +1,11 @@
 # Rounded Corners Light
 
-Local GNOME Shell 50 extension (`rounded-corners-light@local`): floating
+Local GNOME Shell 50/51 extension (`rounded-corners-light@local`): floating
 windows, their Overview previews and the large workspace previews get a 24px
 radius, the small workspace thumbnails 5px. The shadow is libadwaita's own
 default, drawn inside the same shader. What each revision changed and why is in
 [`rounded-corners-light@local/README.md`](rounded-corners-light@local/README.md);
-the git log of this folder holds revisions 5 to 8.
+the git log of this folder holds earlier revisions.
 
 ```sh
 ./install.sh            # copies the extension into ~/.local/share/gnome-shell/extensions

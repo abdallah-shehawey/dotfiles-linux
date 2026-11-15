@@ -1,10 +1,18 @@
 # Rounded Corners Light
 
-Local GNOME Shell 50 extension. Floating normal and dialog windows, their
+Local GNOME Shell 50/51 extension. Floating normal and dialog windows, their
 Overview previews and the large workspace previews get a 24px radius; the small
 workspace thumbnails get 5px, matching the native 8px selection indicator with
 its 3px border. Maximized, tiled and fullscreen windows stay square on the
 desktop and are rounded only inside their Overview preview.
+
+## Revision 9 (2026-11-05)
+
+GNOME Shell 51 removed `Shell.GLSLEffect`. Use its replacement,
+`Clutter.ShaderEffect`, with the same fragment snippet and uniform values;
+retain the previous path for GNOME 50. The existing 107 functional checks
+passed on a private GNOME Shell 51.1 session with Wayland and X11 test windows.
+Performance and GNOME 50 were not remeasured for this revision.
 
 ## Revision 8 (2026-10-12)
 
@@ -150,6 +158,6 @@ Tests, measurements, screenshots and the revision 5 files are under
 
 GNOME Shell imports an extension's code once per session: disabling and
 enabling does not load edited code. Log out and back in once; the journal then
-shows "Rounded Corners Light revision 8 loaded".
+shows "Rounded Corners Light revision 9 loaded".
 
 Disable with: `gnome-extensions disable rounded-corners-light@local`.

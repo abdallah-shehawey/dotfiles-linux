@@ -3,7 +3,8 @@
   "name": "Rounded Corners Light",
   "description": "Rounded windows and Overview previews with GNOME's own default shadow drawn inside each window, native animation timing, curved resize grips and safe size transitions.",
   "shell-version": [
-    "50"
+    "50",
+    "51"
   ],
-  "version": 8
+  "version": 9
 }

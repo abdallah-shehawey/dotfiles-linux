@@ -23,6 +23,11 @@ dotfiles-linux/
 ├── zen/                # Zen Browser
 │   └── horizontal-tabs/  # tabs on the address-bar row (userChrome.css + user.js)
 │
+├── games/              # Windows games under Wine from Steam, written as AI instructions
+│   ├── AI-PROMPT.md    # the main step-by-step prompt
+│   ├── common/         # launchers, controller tools, fixes
+│   └── <game>/         # one README per game (PES 2021, PES 2019, Blur, WWE 2K Battlegrounds)
+│
 ├── themes/             # Visual Assets
 │   ├── icons/          # Custom icons
 │   └── icon-theme/     # Full icon themes
@@ -168,6 +173,16 @@ zen/horizontal-tabs/install.sh
 Details and measurements: [zen/horizontal-tabs/README.md](zen/horizontal-tabs/README.md).
 This used to be its own repository (`zen-horizontal-tabs`); its full history
 is merged here.
+
+## 🎮 Games (Wine + Steam, as AI instructions)
+
+PES 2021, PES 2019, Blur and WWE 2K Battlegrounds running under Wine from the
+Steam library, with one controller map for every game and the fixes for
+stutter, vibration, slow starts and crashes. It is written so an AI assistant
+can rebuild or repair it step by step: give it
+[games/AI-PROMPT.md](games/AI-PROMPT.md). Each game has its own README; see
+[games/README.md](games/README.md).
+
 ### ⚙️ System Optimization
 
 Low-level tweaks for performance and utility.

@@ -5,6 +5,8 @@
 #        ./play-pes2021.sh settings   open the game's Settings.exe
 #        ./play-pes2021.sh pads       open the Wine controller test window
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
+# The shared tools sit next to this game's folder: <games folder>/common
+COMMON="$(dirname "$PWD")/common"
 
 export WINEPREFIX="${WINEPREFIX:-$HOME/.wine}"
 export WINEDEBUG="${WINEDEBUG:--all}"
@@ -22,7 +24,7 @@ export __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1
 
 # Pads: the map shared with the other games, set in Controller Settings
 # (the game's own Settings tool cannot list pads under Wine Mono)
-source /media/Games/common/pads.sh
+source "$COMMON/pads.sh"
 
 # Rumble, for every pad the game uses: PES sends short, weak pulses that the
 # Twin USB pads cannot feel, so common/rumble-boost raises any vibration to at
@@ -32,7 +34,7 @@ source /media/Games/common/pads.sh
 export RUMBLE_BOOST_FLOOR="${RUMBLE_BOOST_FLOOR:-75}"
 export RUMBLE_BOOST_MIX="${RUMBLE_BOOST_MIX:-1}"
 export RUMBLE_BOOST_MIN_MS="${RUMBLE_BOOST_MIN_MS:-400}"
-export LD_LIBRARY_PATH="/media/Games/common/rumble-boost${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$COMMON/rumble-boost${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 case "$1" in
     settings) exec wine Settings.exe ;;

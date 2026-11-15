@@ -21,9 +21,12 @@ screen in every test.
 
 Usage: pes2019-stack-fix.py status | apply [16|32|48] | revert
 """
+import os
 import sys
 
-EXE = "/media/Games/PES-2019/PES2019.exe"
+# <games folder>/PES-2019/PES2019.exe, next to this script's common/ folder
+EXE = os.environ.get("PES2019_EXE") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "PES-2019", "PES2019.exe")
 OFFSET = 0x1173A220  # file offset of VA 0x151B3B020 (AddressOfEntryPoint)
 
 ORIG = bytes.fromhex(
@@ -59,6 +62,8 @@ def write(data):
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if not os.path.isfile(EXE):
+        sys.exit(f"no game exe at {EXE} (set PES2019_EXE to its path)")
     state = current()
     if state == "unknown":
         sys.exit(f"{EXE}: entry bytes are neither original nor a known patch, not touching it")

@@ -12,7 +12,7 @@
 | Kernel driver | `hid-pl` (pantherlord). It supports rumble but scales full strength down to about half of the motor range. |
 | Map files | `~/.config/game-pads/mappings.txt` (saved by the owner, copy in [../config/game-pads/mappings.txt](../config/game-pads/mappings.txt)), `auto-mappings.txt` (guesses for unknown pads), `player-order.json`, `gamecontrollerdb.txt` (session file) |
 | Code | `common/pads.sh` (sourced by every launcher) → `common/pad_maps.py`; app `common/pad-settings.py` started by `common/controller-settings.sh` |
-| Steam shortcut | "Controller Settings", appid `3501849340`, Steam Input off |
+| Steam shortcut | "Controller Settings", appid `3501849340`, Steam Input off (install: [below](#controller-settings-inside-steam-install)) |
 | Log | `~/.cache/wine-games/pads.log`, `~/.cache/wine-games/pad-settings.log` |
 | On screen in games | Xbox letters: **A = ✕ Cross, B = ○ Circle, X = □ Square, Y = △ Triangle** |
 
@@ -84,6 +84,61 @@ games work ("All good").
 Needs: `python3-gobject`, `gtk4`, `libadwaita`, `python3-cairo`, SDL3 (`SDL3`).
 It does **not** start? Read `~/.cache/wine-games/pad-settings.log`. Test it
 without Steam: `/media/Games/common/controller-settings.sh`.
+
+## Controller Settings inside Steam (install)
+
+It is a non-Steam shortcut like the games:
+
+| Field | Value |
+|---|---|
+| Name | `Controller Settings` (appid `3501849340`, fixed) |
+| Target | `"/media/Games/common/steam-launch.sh"` |
+| Start in | `"/media/Games/common/"` |
+| Launch options | `/media/Games/common/controller-settings.sh` |
+| Overlay / Steam Input | both off |
+| Artwork | [../tools/steam/art/](../tools/steam/art/) (`3501849340p.png` cover, `3501849340.png` wide, `_hero`, `_logo`) |
+| Icon | `local.games.PadSettings` in `~/.local/share/icons/hicolor/256x256/apps/` |
+| Dock entry | `~/.local/share/applications/local.games.PadSettings.desktop` (named after the app's GTK id, so GNOME matches the window) |
+
+**With the tool** (Steam closed): `python3 -I "$REPO/games/tools/steam/steam-shortcut.py" controller-settings`
+(or just `./install.sh`, which does it when it is missing).
+
+**By hand in Steam** (if the tool cannot be used):
+1. Games → **Add a Non-Steam Game to My Library** → **Browse** → `/media/Games/common/steam-launch.sh`
+   (set the file type to All Files if it is not listed) → **Add Selected Programs**.
+2. Right-click it → **Properties**: Name `Controller Settings`; Launch Options
+   `/media/Games/common/controller-settings.sh`; turn off **Enable the Steam Overlay**.
+3. Properties → **Controller** → **Disable Steam Input**.
+4. Right-click → **Manage** → **Set custom artwork** → `tools/steam/art/3501849340p.png`.
+   On its page: right-click the banner → **Set Custom Background** (`3501849340_hero.png`)
+   and **Set Custom Logo** (`3501849340_logo.png`).
+
+## Steam Input and Steam's own controller settings
+
+- **Steam Input per game.** Properties → Controller → "Disable Steam Input"
+  is the recommended setting for every game and for Controller Settings
+  (the tool and `install.sh` set it for shortcuts they create). Steam (Nov
+  2026) keeps it in `userdata/<id>/config/localconfig.vdf` as
+  `UserLocalConfigStore/apps/<appid>/UseSteamControllerConfig "0"`; the older
+  `Software/Valve/Steam/apps/<appid>` key shows in the UI as "Use default settings".
+- On this laptop the four games were left on "default" and the pads work (the
+  owner confirmed). In a test no "Steam Virtual Gamepad" appeared either way,
+  because `steam-launch.sh` wipes Steam's environment and `pads.sh` pins
+  `SDL_JOYSTICK_DEVICE` to the real pads. So: if it works, leave it; if a game
+  sees **doubled pads** or a Steam virtual pad, disable Steam Input for it.
+- **Steam's own controller settings** (Steam → Settings → Controller, or Big
+  Picture → Settings → Controller): Steam shows the Twin USB adapter as a PS3
+  controller with the same SDL map. A layout saved there lands in
+  `~/.local/share/Steam/config/config.vdf` as `SDL_GamepadBind`, and
+  `pad_maps.py` reads it (source 2 in "How it works"). The owner's maps from
+  Controller Settings (`mappings.txt`) **win** over it. So set buttons in
+  Controller Settings, not in Steam.
+- Steam passes its pad list to what it starts as `SDL_GAMECONTROLLERCONFIG`;
+  `steam-launch.sh` forwards it as `STEAM_PAD_MAPPINGS` and `pads.sh` adds it.
+- Never turn on Properties → **Compatibility** → "Force the use of a specific
+  Steam Play compatibility tool" for these shortcuts. They are Linux shell
+  scripts that start system Wine; Proton would try to run the script as a
+  Windows program.
 
 ## Checks
 

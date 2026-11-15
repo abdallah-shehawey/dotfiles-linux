@@ -20,6 +20,9 @@
 
 ## Install / repair (in order)
 
+Fast path: `cd "$REPO/games" && ./install.sh && ./check.sh` does every step
+below. The steps are here to understand and to do by hand.
+
 1. **32-bit DXVK into the game folder.** Fedora's `wine-dxvk` is 64-bit only,
    so a 32-bit DX9 game would get Wine's slower own D3D9. Take the 32-bit
    `d3d9.dll` from Steam's **Proton Experimental** (no download from the web;
@@ -37,7 +40,7 @@
    ```bash
    WINEPREFIX=~/.wine-games wine reg add 'HKCU\Software\Wine\AppDefaults\Blur.exe\DllOverrides' /v msvcr90 /d native,builtin /f
    ```
-3. Steam shortcut (only if missing): Phase F of AI-PROMPT.
+3. Steam shortcut with its pictures: [Steam pictures and dock icon](#steam-pictures-and-dock-icon).
 
 **Check:**
 ```bash
@@ -45,6 +48,39 @@ WINEPREFIX=~/.wine-games wine reg query 'HKCU\Software\Wine\AppDefaults\Blur.exe
 ls -l /media/Games/Blur/d3d9.dll
 grep -c 'err:d3d' ~/.cache/wine-games/blur.log    # after a run: 0
 ```
+
+## Steam pictures and dock icon
+
+| File in [art/](art/) | Steam slot | Size |
+|---|---|---|
+| `cover.png` | Library cover (grid `<appid>p.png`) | 600x900 |
+| `wide.png` | Wide capsule (grid `<appid>.png`) | 920x430 |
+| `hero.png` | Banner on the game page (grid `<appid>_hero.png`) | 1920x620 |
+| `logo.png` | Logo over the banner (grid `<appid>_logo.png`) | 1160x480 |
+| `icon.png` | Shortcut icon + dock icon `blur-game` | 256x256 |
+
+Made from the wallpapers that ship with the game (`Blur/Bonus/Wallpapers/`).
+The owner likes these; keep them. Install (Steam closed):
+```bash
+T="$REPO/games/tools/steam/steam-shortcut.py"; A="$REPO/games/blur/art"
+python3 -I "$T" add --name "Blur" --launcher /media/Games/common/play-blur.sh \
+    --exe /media/Games/Blur/Blur.exe --wmclass blur.exe \
+    --desktop-id game-blur --icon-name blur-game \
+    --cover "$A/cover.png" --wide "$A/wide.png" --hero "$A/hero.png" --logo "$A/logo.png" --icon "$A/icon.png"
+```
+By hand: AI-PROMPT section 8.2. Dock entry: [../config/applications/game-blur.desktop](../config/applications/game-blur.desktop)
+(window class `blur.exe`; do not use the old ids `blur.desktop`).
+
+## Game settings
+
+| File in [settings/](settings/) | Goes to | Holds |
+|---|---|---|
+| `settings.xml` | `~/.wine-games/drive_c/users/$USER/AppData/Roaming/bizarre creations/blur/settings.xml` | 2560x1440, full screen (`windowed="0"`), vsync on, graphical detail 4 |
+
+`./install.sh` puts it back when it is missing; `./install.sh --restore-settings`
+also over an existing one (backup first). The race saves are next to it in
+`save/blursave` and are not in this repo. The only per-game Wine setting is
+the `msvcr90` override below.
 
 ## Known problems and their fixes
 

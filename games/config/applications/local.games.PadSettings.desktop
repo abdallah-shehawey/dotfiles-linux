@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Controller Settings
+Icon=local.games.PadSettings
+Exec=steam steam://rungameid/-3406415682856812544
+StartupWMClass=local.games.PadSettings
+NoDisplay=true

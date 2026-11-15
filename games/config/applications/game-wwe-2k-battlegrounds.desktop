@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=WWE 2K Battlegrounds
+Comment=Started from Steam; this entry only gives the window its dock icon
+Icon=wwe-2k-battlegrounds
+Exec=env __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only steam steam://rungameid/9414040285291216896
+StartupWMClass=wweplaygrounds-win64-shipping.exe
+StartupNotify=false
+NoDisplay=true

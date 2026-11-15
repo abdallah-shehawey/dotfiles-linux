@@ -23,20 +23,46 @@ shortcuts. Everything below was built and debugged on this exact laptop in
 November 2026. The fixes are real and measured. Follow them; do not invent
 new ones unless a step tells you to investigate.
 
-Work in this order. Do not skip a phase. After every phase, run its **Check**
-and compare the output with what is written. If a check fails, use the
-**If it fails** list of that phase, then
-[section 9 (Troubleshooting)](#9-troubleshooting-symptom--cause--fix).
+### 0.0 The fast path (do this first)
+
+Two scripts in this folder do and check almost everything below:
+
+```bash
+REPO=~/Projects/dotfiles-linux        # or wherever this repository is
+cd "$REPO/games"
+./check.sh            # read-only: ✓ fine, ✗ broken (with the fix), ! worth a look
+./install.sh          # fixes what check.sh found; safe to run again; never sudo
+./check.sh            # must end with "All checks passed."
+```
+
+- `install.sh` never runs `sudo`. Whatever needs the password is printed at the
+  end under **THE OWNER MUST DO** with the exact command. Show those to the
+  owner, wait, then run `./install.sh` again.
+- It needs **Steam closed** for the Steam part (shortcuts, pictures). If Steam
+  is open it says so; ask the owner to close it (Steam → Exit) and run again.
+  `./install.sh --no-steam` does everything else.
+- It backs up every file it replaces to `~/.cache/wine-games/install-backup-<date>/`.
+- `./install.sh --restore-settings` also puts the owner's in-game settings
+  back over the current ones: PES (Arabic commentary, graphics, screen), Blur
+  and WWE (screen, graphics). Without it, settings are only put back where
+  none exist yet.
+- Last full run on this laptop (15 Nov 2026): `install.sh` then `check.sh` →
+  "All checks passed."
+
+The phases below explain every piece, so you can **understand a ✗, fix it by
+hand when a script cannot, and know why each fix exists**. Work in this order;
+do not skip a phase. After every phase, run its **Check** and compare the output.
+If a check fails, see [section 9 (Troubleshooting)](#9-troubleshooting-symptom--cause--fix).
 
 | Phase | What | Section |
 |---|---|---|
 | A | Programs | [3](#3-phase-a--programs) |
-| B | Performance fix (split locks, GameMode) | [4](#4-phase-b--performance-fix) |
+| B | Performance fix (split locks, GameMode, cores, 60 Hz) | [4](#4-phase-b--performance-fix) and [performance/README.md](performance/README.md) |
 | C | Games folder and shared launchers | [5](#5-phase-c--games-folder-and-shared-launchers) |
 | D | Wine prefixes and DXVK | [6](#6-phase-d--wine-prefixes-and-dxvk) |
-| E | Controllers | [7](#7-phase-e--controllers) and [controllers/README.md](controllers/README.md) |
-| F | Steam shortcuts | [8](#8-phase-f--steam-shortcuts) |
-| G | Each game | the game's own README (table in [section 2](#2-the-games)) |
+| E | Controllers (+ Controller Settings in Steam) | [7](#7-phase-e--controllers) and [controllers/README.md](controllers/README.md) |
+| F | Steam shortcuts, pictures, dock icons | [8](#8-phase-f--steam-shortcuts-pictures-dock-icons) |
+| G | Each game (settings, known problems) | the game's own README (table in [section 2](#2-the-games)) |
 
 ### 0.1 Rules you must follow
 
@@ -178,6 +204,10 @@ with no error; `ls /usr/lib64/libSDL2-2.0.so.0` exists.
 
 ## 4. Phase B — Performance fix
 
+Everything about performance (split locks, P/E cores, 60 Hz, governor, GPU,
+how to measure) is explained in detail in
+[performance/README.md](performance/README.md). The short version:
+
 **Why.** The games' worker threads (PES 2021's `JobGraph` threads, PES 2019's
 start-up code) do split locks all the time. With
 `kernel.split_lock_mitigate=1` (Fedora's default) the kernel punishes each one
@@ -267,10 +297,16 @@ Two prefixes, on purpose:
    [ -f ~/.wine/system.reg ]       || WINEPREFIX=~/.wine       WINEARCH=win64 wineboot -i
    ```
    **Never** trash an existing `~/.wine`: the owner has other programs in it.
-2. Stop Wine from making app-menu entries and file links:
+2. Stop Wine from making app-menu entries and file links in the games prefix
+   (only `~/.wine-games`; leave `~/.wine` alone, the owner's other programs may
+   want their menu entries). Pass the override on the command line too: the
+   first Wine start after creating a prefix runs the menu builder otherwise
+   (seen in a test: 6 `wine-extension-*.desktop` files):
    ```bash
-   for P in ~/.wine ~/.wine-games; do WINEPREFIX=$P wine reg add 'HKCU\Software\Wine\DllOverrides' /v winemenubuilder.exe /d '' /f; done
+   WINEPREFIX=~/.wine-games WINEDLLOVERRIDES="winemenubuilder.exe=d" wine reg add 'HKCU\Software\Wine\DllOverrides' /v winemenubuilder.exe /d '' /f
    ```
+   When creating a prefix, add `WINEDLLOVERRIDES="mscoree=;mshtml=;winemenubuilder.exe=d"`
+   to the `wineboot -i` command for the same reason.
 3. DXVK for 64-bit games comes from Fedora's `wine-dxvk` package: it switches
    Wine's own 64-bit `d3d9`, `d3d10core`, `d3d11`, `dxgi` to DXVK through
    `alternatives`. Nothing to copy. Check:
@@ -324,53 +360,85 @@ prints one entry per connected pad, each with a mapping. Then
 
 ---
 
-## 8. Phase F — Steam shortcuts
+## 8. Phase F — Steam shortcuts, pictures, dock icons
 
-Each game is a non-Steam shortcut: target `"/media/Games/common/steam-launch.sh"`,
-start-in `"/media/Games/common/"`, launch options = the game's launcher.
-Overlay off, Steam Input off. The tool below writes all of that, the Steam
-Input setting and a hidden dock-icon `.desktop` file. Steam must be closed
-(rule 4).
+Each game is a **non-Steam shortcut**:
 
-**On this laptop the shortcuts already exist** (made by hand on 1-15 Nov 2026:
-PES 2021 appid `2170374278`, PES 2019 `3193774979`, Blur `2974620932`, WWE
-`2191877059`, Controller Settings `3501849340`). If they are in the Library and
-start, **skip this phase**. Use it on a fresh install, or to rebuild one broken
-shortcut.
+| Field | Value |
+|---|---|
+| Target | `"/media/Games/common/steam-launch.sh"` |
+| Start in | `"/media/Games/common/"` |
+| Launch options | the game's launcher (table in section 2) |
+| Overlay | off |
+| Steam Input | off (recommended, see [controllers/README.md](controllers/README.md#steam-input-and-steams-own-controller-settings)) |
+| Compatibility | **off**. Never force Proton / a Steam Play tool: the target is a Linux script that starts system Wine. |
+| Pictures | `<game>/art/` in this repo: `cover.png` (600x900, library), `wide.png` (920x430), `hero.png` (1920x620 banner), `logo.png` (name over the banner), `icon.png` (square) |
+| Dock icon | a hidden `~/.local/share/applications/<id>.desktop` with `StartupWMClass` = the game window's class and `NoDisplay=true` |
+
+Per game (all from `lib.sh`):
+
+| Steam name | Launcher | `--exe` | Window class | Icon name | Dock entry id | Appid on this laptop |
+|---|---|---|---|---|---|---|
+| eFootball PES 2021 | `/media/Games/eFootball-PES-2021/play-pes2021.sh` | `PES2021.exe` | `pes2021.exe` | `3FAA_PES2021.0` | `game-pes-2021` | `2170374278` |
+| PES 2019 | `/media/Games/common/play-pes2019.sh` | `PES2019.exe` | `pes2019.exe` | `pes-2019` | `game-pes-2019` | `3193774979` |
+| Blur | `/media/Games/common/play-blur.sh` | `Blur.exe` | `blur.exe` | `blur-game` | `game-blur` | `2974620932` |
+| WWE 2K Battlegrounds | `/media/Games/common/play-wwe2k-battlegrounds.sh` | `WWEBattlegrounds.exe` | `wweplaygrounds-win64-shipping.exe` | `wwe-2k-battlegrounds` | `game-wwe-2k-battlegrounds` | `2191877059` |
+| Controller Settings | `/media/Games/common/controller-settings.sh` | — | `local.games.PadSettings` | `local.games.PadSettings` | `local.games.PadSettings` | `3501849340` |
+
+### 8.1 With the scripts (preferred)
+
+`./install.sh` does this whole phase: it checks each shortcut (target, launch
+options, overlay, all four pictures, icon, dock entry) and fixes only what is
+wrong. Steam must be closed (rule 4).
+
+The tool it uses, for one game by hand (Steam closed):
 
 ```bash
-T="$REPO/games/tools/steam/steam-shortcut.py"
-G=/media/Games
-python3 -I "$T" add --name "eFootball PES 2021"   --launcher "$G/eFootball-PES-2021/play-pes2021.sh"   --exe "$G/eFootball-PES-2021/PES2021.exe"
-python3 -I "$T" add --name "PES 2019"             --launcher "$G/common/play-pes2019.sh"               --exe "$G/PES-2019/PES2019.exe"
-python3 -I "$T" add --name "Blur"                 --launcher "$G/common/play-blur.sh"                  --exe "$G/Blur/Blur.exe"
-python3 -I "$T" add --name "WWE 2K Battlegrounds" --launcher "$G/common/play-wwe2k-battlegrounds.sh"   --exe "$G/WWE-2K-Battlegrounds/WWEBattlegrounds.exe" --wmclass WWEPlaygrounds-Win64-Shipping.exe
-python3 -I "$T" controller-settings
-python3 -I "$T" list
+T="$REPO/games/tools/steam/steam-shortcut.py"; A="$REPO/games/pes-2019/art"
+python3 -I "$T" add --name "PES 2019" --launcher /media/Games/common/play-pes2019.sh \
+    --exe /media/Games/PES-2019/PES2019.exe --wmclass pes2019.exe \
+    --desktop-id game-pes-2019 --icon-name pes-2019 \
+    --cover "$A/cover.png" --wide "$A/wide.png" --hero "$A/hero.png" --logo "$A/logo.png" --icon "$A/icon.png"
+python3 -I "$T" controller-settings      # Controller Settings, with its own pictures
+python3 -I "$T" show                     # every shortcut as JSON: launch, overlay, Steam Input, which pictures exist
 ```
 
-- Expected for each: `ADDED <name> (<appid>)`. It backs up the Steam files to
-  `~/.cache/wine-games/steam-backup-<date>/` first.
-- A shortcut with the same name is **replaced** (it gets a new appid). Its old
-  artwork stays in `grid/` under the old appid, so pass the pictures again.
-  The hand-made dock entries `~/.local/share/applications/game-pes-2021.desktop`,
-  `game-pes-2019.desktop`, `game-blur.desktop`, `game-wwe-2k-battlegrounds.desktop`
-  point at the old appids: after a replace, move the matching one to the Trash
-  (`gio trash`), because the tool writes a new `steam-game-<name>.desktop`.
-- Pictures are optional: `--cover F` (600x900), `--hero F` (1920x620),
-  `--logo F` (transparent PNG), `--icon F` (square PNG), `--wide F` (920x430).
-  The owner's pictures are not in this repo. Ask the owner for them or for
-  permission to download from steamgriddb.com. An icon can also be pulled from
-  the game's exe: `wrestool -x -t 14 Game.exe -o icon.ico && icotool -x icon.ico`
-  (package `icoutils`).
-- After adding icons to `~/.local/share/icons/hicolor`, run
-  `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor`.
+- `add` on a name that already exists **updates** it and keeps its appid, so
+  pictures, play time and the Steam Input choice stay attached. Safe to repeat.
+- Output `ADDED <name> (<appid>)` or `UPDATED <name> (<appid>)`. Steam's files
+  are backed up to `~/.cache/wine-games/steam-backup-<date>/` first.
+- Pictures go to `~/.local/share/Steam/userdata/<id>/config/grid/` as
+  `<appid>p.png` (cover), `<appid>.png` (wide), `<appid>_hero.png`, `<appid>_logo.png`.
+- `--icon-name` copies the icon to `~/.local/share/icons/hicolor/256x256/apps/<name>.png`
+  and runs `gtk-update-icon-cache`; `--desktop-id` names the dock entry file.
 
-**Check:** open Steam. All four games and Controller Settings are in the
-Library. Right-click one → Properties: launch options = the launcher path,
-Controller → "Disable Steam Input". To start one from a terminal (with the
-owner's OK): `steam steam://rungameid/$(( (APPID<<32) | 0x02000000 ))` with
-`APPID` from `list`.
+### 8.2 By hand in Steam (when the tool cannot be used)
+
+For each game (Steam open, desktop mode):
+1. **Games** → **Add a Non-Steam Game to My Library** → **Browse** → go to
+   `/media/Games/common/`, pick `steam-launch.sh` (set the file type to **All
+   Files** if it is not listed) → **Add Selected Programs**.
+2. Right-click the new entry → **Properties**:
+   - Name: the Steam name from the table.
+   - Launch Options: the launcher path from the table.
+   - Turn off **Enable the Steam Overlay while in-game**.
+   - Icon: click the square next to the name → `<game>/art/icon.png`.
+3. Properties → **Controller** → **Disable Steam Input**.
+4. Properties → **Compatibility**: the box must stay **unticked**.
+5. Pictures: right-click the game → **Manage** → **Set custom artwork** →
+   `<game>/art/cover.png`. Open the game's page → right-click the banner →
+   **Set Custom Background** → `hero.png`, then **Set Custom Logo** → `logo.png`.
+   (Big Picture: game page → ⚙ → Properties / Manage, same items.)
+6. Dock icon: copy `<game>/art/icon.png` to
+   `~/.local/share/icons/hicolor/256x256/apps/<icon name>.png`, copy the
+   matching file from [config/applications/](config/applications/) to
+   `~/.local/share/applications/`, change its `steam://rungameid/` number if
+   the appid differs (`(appid << 32) | 0x02000000`), then run
+   `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor`.
+
+**Check:** `./check.sh` (section F), or open Steam: all four games and
+Controller Settings show their pictures in the Library. To start one from a
+terminal (with the owner's OK): `steam steam://rungameid/$(( (APPID<<32) | 0x02000000 ))`.
 
 ---
 
@@ -401,6 +469,12 @@ table.
 | Online mode: network error `FDDN580` | Konami turned the PES 2019/2021 servers off (no DNS for `pes19-x64-gate` / `pes21-x64-gate` .konami.net, checked 15 Nov 2026) | Nothing to fix. Press OK; offline modes work. Internet itself works in both prefixes. |
 | CPU stays hot / fast after the game | GameMode restored `performance` | `~/.config/gamemode.ini` with `defaultgov=powersave` (Phase B). |
 | Game window has a gear icon in the dock | Missing dock `.desktop` or icon cache | Window classes: `pes2021.exe`, `pes2019.exe`, `blur.exe`, `wweplaygrounds-win64-shipping.exe`. `steam-shortcut.py add` writes the file; run `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor`. |
+| No pictures in the Steam Library | Pictures missing in `grid/`, or the shortcut was re-made with a new appid | `./install.sh` (Steam closed) puts `<game>/art/*` back; by hand: section 8.2 step 5. |
+| Two copies of a game in Steam | A hand-made shortcut and one from another tool with a different name | Keep the one `./check.sh` reports as ok; remove the other: right-click → Manage → Remove non-Steam game. |
+| Steam says "the game is running" for a second then stops | Steam Play compatibility tool forced on the shortcut, or the launcher fails | Properties → Compatibility: untick. Then run the launcher in a terminal and read the error. |
+| PES commentary back in English / graphics back to default | Save settings lost (new install, deleted Documents) | `./install.sh --restore-settings` (after starting the game once), or the menu path in [pes-2019/README.md](pes-2019/README.md#commentary-language-arabic). |
+| PES starts in a 1920x1080 window | `settings.dat` missing or wrong size | `./install.sh` puts the owner's back (2560x1440 full screen), or `tools/pes-settings-dat.py set ...`. |
+| Controller Settings missing from Steam | Shortcut never added | `./install.sh` or `steam-shortcut.py controller-settings` (Steam closed). |
 
 If none fits, investigate, then **write what you found into the game's README**
 (symptom, cause, fix, how you checked it), so the next AI does not start over.
@@ -422,23 +496,37 @@ If none fits, investigate, then **write what you found into the game's README**
 | `~/Documents/KONAMI/` | PES saves and `settings.dat` (Wine links the prefix's Documents here) |
 | `~/.local/share/Steam/userdata/<id>/config/` | `shortcuts.vdf`, `localconfig.vdf`, `grid/` (artwork) |
 | `~/.local/share/applications/*.desktop` | Hidden dock-icon entries (`NoDisplay=true`) |
+| `~/.local/share/icons/hicolor/256x256/apps/` | Game icons (`3FAA_PES2021.0`, `pes-2019`, `blur-game`, `wwe-2k-battlegrounds`, `local.games.PadSettings`) |
+| `~/.cache/wine-games/install-backup-*` | Files `install.sh` replaced |
+
+In this repository:
+
+| Path | What |
+|---|---|
+| `install.sh`, `check.sh`, `lib.sh` | Install / check everything; `lib.sh` holds the game table (names, paths, classes, icons) |
+| `common/` | Copy of `/media/Games/common` |
+| `<game>/art/` | Steam pictures + icon for that game |
+| `pes-2021/settings/`, `pes-2019/settings/` | The owner's `settings.dat` and in-game settings saves (`SYSTEM00000000`, `GRAPHICS000000`) |
+| `config/` | `gamemode.ini`, the owner's pad map, the dock `.desktop` files |
+| `tools/` | `steam/steam-shortcut.py` (+ Controller Settings pictures), `pes-settings-dat.py` |
+| `performance/README.md`, `controllers/README.md`, `<game>/README.md` | Details |
 
 ---
 
 ## 11. Final check and report
 
-When you are done, run all of these and paste the results to the owner:
+When you are done:
 
 ```bash
-rpm -q wine wine-dxvk gamemode steam sdl2-compat
-getent group gamemode | grep -qw "$USER" && echo "gamemode group: yes"
-cat /proc/sys/kernel/split_lock_mitigate
-ls /media/Games/common/rumble-boost/libSDL2-2.0.so.0
-python3 /media/Games/common/pes2019-stack-fix.py status
-python3 -I /media/Games/common/pad_maps.py --json | head -40
-python3 -I "$REPO/games/tools/steam/steam-shortcut.py" list
+cd "$REPO/games" && ./check.sh
 ```
 
-Then tell the owner, per game: what you changed, what you checked, and what is
-still **not** checked (for example "did not play a full match"). Ask them to
-press Play on each game once and tell you what happens.
+It must end with **"All checks passed."** Paste its output (or `./check.sh --quiet`)
+to the owner. Then tell the owner, per game: what you changed, what you checked,
+and what is still **not** checked (for example "did not play a full match").
+Ask them to press Play on each game once and tell you what happens; while a
+game runs, `./check.sh` also confirms `split_lock_mitigate = 0`.
+
+If you found and fixed something new, write it into that game's README
+(symptom, cause, fix, how you checked) and, if a script changed, copy the
+change into this repository too, so the next AI starts from it.

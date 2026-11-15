@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PES 2019
+Comment=Started from Steam; this entry only gives the game window its dock icon
+Icon=pes-2019
+Exec=steam steam://rungameid/-4729584988087910400
+StartupWMClass=pes2019.exe
+StartupNotify=false
+NoDisplay=true

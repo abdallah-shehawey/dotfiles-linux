@@ -32,17 +32,20 @@
 
 ## Install / repair (in order)
 
+Fast path: `cd "$REPO/games" && ./install.sh && ./check.sh` does every step
+below. The steps are here to understand and to do by hand.
+
 1. Copy the launcher files (also in Phase C of AI-PROMPT):
    ```bash
    cp -a "$REPO/games/pes-2021/"{play-pes2021.sh,dxvk.conf,game-session.py} /media/Games/eFootball-PES-2021/
    chmod +x /media/Games/eFootball-PES-2021/{play-pes2021.sh,game-session.py}
    ```
-2. If the games folder is not `/media/Games`, change the two `/media/Games/common`
-   paths inside `play-pes2021.sh`.
+2. The launcher finds the shared tools by itself (`<games folder>/common`, next
+   to its own folder), so another games folder needs no edit.
 3. Make sure `rumble-boost` is built: `ls /media/Games/common/rumble-boost/libSDL2-2.0.so.0`
    (if missing: `/media/Games/common/rumble-boost/build.sh`).
-4. Steam shortcut (only if missing): Phase F of AI-PROMPT.
-5. Screen settings: see [Resolution and full screen](#resolution-and-full-screen).
+4. Steam shortcut with its pictures: see [Steam pictures and dock icon](#steam-pictures-and-dock-icon).
+5. Screen and in-game settings: see [Settings files](#settings-files-in-this-repo).
 
 **Check:** ask the owner to press Play. While it runs:
 ```bash
@@ -51,6 +54,47 @@ cat /proc/sys/kernel/split_lock_mitigate   # must be 0
 taskset -pc $(ps -eo pid,comm | awk '$2 ~ /PES2021/ {print $1; exit}')   # 0-11
 ```
 Screen must switch to 60 Hz during the game and back to 165 Hz after.
+
+## Steam pictures and dock icon
+
+| File in [art/](art/) | Steam slot | Size |
+|---|---|---|
+| `cover.png` | Library cover (grid `<appid>p.png`) | 600x900 |
+| `wide.png` | Wide capsule (grid `<appid>.png`) | 920x430 |
+| `hero.png` | Banner on the game page (grid `<appid>_hero.png`) | 1920x620 |
+| `logo.png` | Logo over the banner (grid `<appid>_logo.png`) | 856x448 |
+| `icon.png` | Shortcut icon + dock icon `3FAA_PES2021.0` (rounded corners) | 256x256 |
+
+Install (Steam closed):
+```bash
+T="$REPO/games/tools/steam/steam-shortcut.py"; A="$REPO/games/pes-2021/art"
+python3 -I "$T" add --name "eFootball PES 2021" --launcher /media/Games/eFootball-PES-2021/play-pes2021.sh \
+    --exe /media/Games/eFootball-PES-2021/PES2021.exe --wmclass pes2021.exe \
+    --desktop-id game-pes-2021 --icon-name 3FAA_PES2021.0 \
+    --cover "$A/cover.png" --wide "$A/wide.png" --hero "$A/hero.png" --logo "$A/logo.png" --icon "$A/icon.png"
+```
+By hand: AI-PROMPT section 8.2. Dock entry: [../config/applications/game-pes-2021.desktop](../config/applications/game-pes-2021.desktop)
+(window class `pes2021.exe`). The pictures were made from the game's own installer
+image and icon; the square original icon (before rounding) is in
+`~/.cache/wine-games/path-backup/pes-icon-square` on this laptop.
+
+## Settings files in this repo
+
+[settings/](settings/) holds the owner's files, to put back after a reinstall:
+
+| File | Goes to | Holds |
+|---|---|---|
+| `settings.dat` (612 bytes) | `~/Documents/KONAMI/eFootball PES 2021 SEASON UPDATE/settings.dat` | Full screen, 2560x1440, keyboard map |
+| `SYSTEM00000000` | `~/Documents/KONAMI/eFootball PES 2021 SEASON UPDATE/<number>/save/` | In-game system settings (Controller Vibration On, ...) |
+| `GRAPHICS000000` | same `save/` folder | In-game graphics settings |
+
+- `./install.sh` puts `settings.dat` back when it is missing or the wrong
+  size, and the two save files when the `save/` folder has none.
+- `<number>` is a folder the game creates on its first start. Start the game
+  once, quit, then `./install.sh --restore-settings` to put the owner's
+  in-game settings over the new defaults (old ones are backed up).
+- Edit only the screen: `tools/pes-settings-dat.py` (next section).
+- The save files are encrypted by the game; copy them whole, never edit them.
 
 ## Known problems and their fixes
 

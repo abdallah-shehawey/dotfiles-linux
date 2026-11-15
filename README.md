@@ -178,10 +178,15 @@ is merged here.
 
 PES 2021, PES 2019, Blur and WWE 2K Battlegrounds running under Wine from the
 Steam library, with one controller map for every game and the fixes for
-stutter, vibration, slow starts and crashes. It is written so an AI assistant
-can rebuild or repair it step by step: give it
-[games/AI-PROMPT.md](games/AI-PROMPT.md). Each game has its own README; see
-[games/README.md](games/README.md).
+stutter, vibration, slow starts and crashes, the Steam pictures and each
+game's settings. It is written so an AI assistant can rebuild or repair it
+step by step: give it [games/AI-PROMPT.md](games/AI-PROMPT.md). Each game has
+its own README; see [games/README.md](games/README.md).
+
+```bash
+games/check.sh      # what is fine and what is broken (changes nothing)
+games/install.sh    # install / repair everything (close Steam first)
+```
 
 ### ⚙️ System Optimization
 

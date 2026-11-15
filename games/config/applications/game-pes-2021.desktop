@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=eFootball PES 2021
+Comment=Started from Steam; this entry only gives the window its dock icon
+Icon=3FAA_PES2021.0
+Exec=env __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only steam steam://rungameid/9321686544123166720
+StartupWMClass=pes2021.exe
+StartupNotify=false
+NoDisplay=true

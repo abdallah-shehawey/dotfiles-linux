@@ -7,11 +7,19 @@ Gaming-on-Linux package, plus --launcher and --wmclass for the per-game launcher
     steam-shortcut.py add --name "eFootball PES 2021" \
         --launcher "/media/Games/eFootball-PES-2021/play-pes2021.sh" \
         --exe "/media/Games/eFootball-PES-2021/PES2021.exe" \
-        [--wmclass pes2021.exe] [--cover F] [--wide F] [--hero F] [--logo F] [--icon F]
+        [--wmclass pes2021.exe] [--desktop-id game-pes-2021]
+        [--cover F] [--wide F] [--hero F] [--logo F] [--icon F] [--icon-name NAME]
     steam-shortcut.py controller-settings     the Controller Settings app, with its pictures
     steam-shortcut.py remove --name "eFootball PES 2021"
     steam-shortcut.py list                    the shortcuts this tool added
+    steam-shortcut.py show                    every non-Steam shortcut as JSON (read-only)
     steam-shortcut.py check                   is Steam ready (installed, signed in)?
+
+"add" on a name that already exists updates that shortcut and KEEPS its appid,
+so it is safe to run again (e.g. to put the artwork back).
+--icon-name installs the icon as ~/.local/share/icons/hicolor/256x256/apps/NAME.png
+and uses NAME in the dock entry; --desktop-id names the dock entry file
+(~/.local/share/applications/<id>.desktop, default steam-game-<name>).
 
 Each game becomes a "non-Steam game" whose target is $GAMES_DIR/common/steam-launch.sh
 (GAMES_DIR defaults to /media/Games) and whose launch options are the game's own
@@ -30,6 +38,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import time
 import zlib
@@ -38,6 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STEAM = os.path.expanduser('~/.local/share/Steam')
 COMMON = os.path.expanduser(os.environ.get('GAMES_DIR', '/media/Games')) + '/common'
 APPS = os.path.expanduser('~/.local/share/applications')
+ICONS = os.path.expanduser('~/.local/share/icons/hicolor')
 BACKUP = os.path.expanduser('~/.cache/wine-games/steam-backup-' + time.strftime('%Y%m%d-%H%M%S'))
 TAG = 'Windows games'          # Steam collection the games go into
 PAD_APP = (3501849340, 'Controller Settings')
@@ -272,11 +282,12 @@ def put_art(lib, appid, pics):
         shutil.copy2(src, os.path.join(lib.grid, f'{appid}{suffix[kind]}{ext}'))
 
 
-def dock_entry(appid, name, icon, wmclass):
+def dock_entry(appid, name, icon, wmclass, desktop_id=None):
     """A hidden menu entry that only gives the game's window its icon in the dock."""
     os.makedirs(APPS, exist_ok=True)
     slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') or str(appid)
-    with open(os.path.join(APPS, f'steam-game-{slug}.desktop'), 'w') as f:
+    desktop_id = desktop_id or f'steam-game-{slug}'
+    with open(os.path.join(APPS, f'{desktop_id}.desktop'), 'w') as f:
         f.write('[Desktop Entry]\nType=Application\n'
                 f'Name={name}\nComment=Started from Steam; this entry only gives the window its dock icon\n'
                 f'Icon={icon or "input-gaming"}\nExec=steam steam://rungameid/{(appid << 32) | 0x02000000}\n'
@@ -307,6 +318,36 @@ def keep_icon(appid, src):
     return dst
 
 
+def theme_icon(src, icon_name):
+    """Install src as a named icon of the user's icon theme; return its path."""
+    folder = os.path.join(ICONS, '256x256', 'apps')
+    os.makedirs(folder, exist_ok=True)
+    dst = os.path.join(folder, f'{icon_name}.png')
+    if os.path.abspath(src) != os.path.abspath(dst):
+        shutil.copy2(src, dst)
+    subprocess.run(['gtk-update-icon-cache', '-f', '-t', ICONS],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return dst
+
+
+def steam_input_state(lib, appid):
+    """'disabled', 'default' or 'unset', as Steam's own top-level apps block holds it."""
+    try:
+        with open(lib.local_path, encoding='utf-8', errors='surrogateescape') as f:
+            local = txt_load(f.read())
+    except OSError:
+        return 'unset'
+    store = child(local, 'UserLocalConfigStore', create=False) or []
+    apps = child(store, 'apps', create=False) if store else None
+    app = child(apps, str(appid), create=False) if apps else None
+    if not app:
+        return 'unset'
+    for k, v in app:
+        if k == 'UseSteamControllerConfig':
+            return 'disabled' if v == '0' else 'default'
+    return 'unset'
+
+
 def arg(args, name):
     if name in args:
         i = args.index(name)
@@ -321,7 +362,7 @@ def main():
         user = steam_user()
         print(f'STEAM-READY {user}' if user else 'STEAM-NOT-READY')
         return 0 if user else 3
-    if cmd not in ('add', 'remove', 'list', 'controller-settings'):
+    if cmd not in ('add', 'remove', 'list', 'show', 'controller-settings'):
         print(__doc__)
         return 2
     lib = Library()
@@ -329,6 +370,18 @@ def main():
     if cmd == 'list':
         for v in lib.ours():
             print(f"{v['appid'][1]}\t{v.get('AppName')}\t{v.get('LaunchOptions')}")
+        return 0
+
+    if cmd == 'show':
+        # every non-Steam shortcut, one JSON object per line (read-only)
+        for v in lib.items:
+            appid = v['appid'][1]
+            art = {k: any(os.path.exists(os.path.join(lib.grid, f'{appid}{s}{e}')) for e in ('.png', '.jpg', '.jpeg'))
+                   for k, s in (('cover', 'p'), ('wide', ''), ('hero', '_hero'), ('logo', '_logo'))}
+            print(json.dumps({'appid': appid, 'name': v.get('AppName'), 'exe': v.get('Exe'),
+                              'start_dir': v.get('StartDir'), 'launch': v.get('LaunchOptions'),
+                              'icon': v.get('icon'), 'overlay': v.get('AllowOverlay', ('i32', 1))[1],
+                              'steam_input': steam_input_state(lib, appid), 'art': art}))
         return 0
 
     if cmd == 'remove':
@@ -347,18 +400,18 @@ def main():
         icon = os.path.join(HERE, 'icons', 'local.games.PadSettings.png')
         lib.items = [v for v in lib.items if v.get('AppName') != name]
         lib.items.append(entry(appid, name, quoted(os.path.join(COMMON, 'controller-settings.sh')),
-                               keep_icon(appid, icon), {}))
+                               theme_icon(icon, 'local.games.PadSettings'), {}))
         put_art(lib, appid, {k: os.path.join(HERE, 'art', f'{appid}{s}.png')
                              for k, s in (('cover', 'p'), ('wide', ''), ('hero', '_hero'), ('logo', '_logo'))})
         lib.save(steam_input_off=[appid])
-        dock_entry(appid, name, 'local.games.PadSettings', 'local.games.PadSettings')
-        icons = os.path.expanduser('~/.local/share/icons/hicolor/256x256/apps')
-        os.makedirs(icons, exist_ok=True)
-        shutil.copy2(icon, os.path.join(icons, 'local.games.PadSettings.png'))
-        print(f'ADDED {name}')
+        # named after the app's GTK application id, so GNOME matches its window
+        dock_entry(appid, name, 'local.games.PadSettings', 'local.games.PadSettings',
+                   'local.games.PadSettings')
+        print(f'ADDED {name} ({appid})')
         return 0
 
-    # add
+    # add (or update: a shortcut with the same name keeps its appid, so its
+    # artwork, Steam Input setting and play time stay attached)
     name, exe = arg(args, '--name'), arg(args, '--exe')
     if not name or not exe or not os.path.isfile(exe):
         print(f'NO-EXE {exe}')
@@ -381,16 +434,27 @@ def main():
         launch = quoted(game_launcher)
     else:
         launch = f'{quoted(os.path.join(COMMON, "play.sh"))} {quoted(exe)}'
-    launcher = quoted(os.path.join(COMMON, 'steam-launch.sh'))
-    appid = shortcut_id(launcher, name)
     old = lib.find(name)
+    appid = old[0]['appid'][1] if old else shortcut_id(quoted(os.path.join(COMMON, 'steam-launch.sh')), name)
+    icon_name = arg(args, '--icon-name')
+    if pics['icon'] and icon_name:
+        icon_path, dock_icon = theme_icon(pics['icon'], icon_name), icon_name
+    elif pics['icon']:
+        icon_path = keep_icon(appid, pics['icon'])
+        dock_icon = icon_path
+    else:
+        icon_path = old[0].get('icon', '') if old else ''
+        dock_icon = icon_name or icon_path or None
+    new = entry(appid, name, launch, icon_path, {'0': TAG})
+    if old:
+        new['LastPlayTime'] = old[0].get('LastPlayTime', ('i32', 0))
     lib.items = [v for v in lib.items if v not in old]
-    lib.items.append(entry(appid, name, launch, keep_icon(appid, pics['icon']), {'0': TAG}))
+    lib.items.append(new)
     put_art(lib, appid, pics)
     lib.save(steam_input_off=[appid])
-    dock_entry(appid, name, os.path.join(COMMON, 'icons', f'{appid}{os.path.splitext(pics["icon"] or "")[1].lower()}')
-               if pics['icon'] else None, (arg(args, '--wmclass') or os.path.basename(exe)).lower())
-    print(f'ADDED {name} ({appid})')
+    dock_entry(appid, name, dock_icon, (arg(args, '--wmclass') or os.path.basename(exe)).lower(),
+               arg(args, '--desktop-id'))
+    print(f'{"UPDATED" if old else "ADDED"} {name} ({appid})')
     print(json.dumps({'steam_user_folder': lib.user, 'backup': BACKUP}))
     return 0
 

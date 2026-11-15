@@ -20,12 +20,15 @@
 
 ## Install / repair (in order)
 
+Fast path: `cd "$REPO/games" && ./install.sh && ./check.sh` does every step
+below. The steps are here to understand and to do by hand.
+
 1. The launcher is in `/media/Games/common` (Phase C of AI-PROMPT). Nothing
    extra goes into the game folder.
 2. DXVK comes from Fedora's `wine-dxvk` (64-bit), nothing to copy (Phase D).
-3. Steam shortcut (only if missing): Phase F of AI-PROMPT. Pass
-   `--wmclass WWEPlaygrounds-Win64-Shipping.exe` so the dock icon matches the
-   real game window.
+3. Steam shortcut with its pictures: [Steam pictures and dock icon](#steam-pictures-and-dock-icon).
+   The window class is the real exe's, `wweplaygrounds-win64-shipping.exe`,
+   not the bootstrap's, so the dock icon matches the game window.
 
 **Check:** start it (or ask the owner), then:
 ```bash
@@ -33,6 +36,38 @@ ps -eo pid,comm | grep -i -E 'wwe|shipping'
 tail -50 ~/.cache/wine-games/wwe2k-battlegrounds.log
 ```
 The Shipping exe must be running; the bootstrap may already be gone (normal).
+
+## Steam pictures and dock icon
+
+| File in [art/](art/) | Steam slot | Size |
+|---|---|---|
+| `cover.png` | Library cover (grid `<appid>p.png`) | 600x900 |
+| `wide.png` | Wide capsule (grid `<appid>.png`) | 920x430 |
+| `hero.png` | Banner on the game page (grid `<appid>_hero.png`) | 1920x620 |
+| `logo.png` | Logo over the banner (grid `<appid>_logo.png`) | 1143x599 |
+| `icon.png` | Shortcut icon + dock icon `wwe-2k-battlegrounds` | 256x256 |
+
+The logo and icon come from the game's own Shipping exe, on a generated blue
+stage. (The installer's `Uninstall/Setup1.jpg` is not WWE art: do not use it.)
+Install (Steam closed):
+```bash
+T="$REPO/games/tools/steam/steam-shortcut.py"; A="$REPO/games/wwe-2k-battlegrounds/art"
+python3 -I "$T" add --name "WWE 2K Battlegrounds" --launcher /media/Games/common/play-wwe2k-battlegrounds.sh \
+    --exe /media/Games/WWE-2K-Battlegrounds/WWEBattlegrounds.exe --wmclass wweplaygrounds-win64-shipping.exe \
+    --desktop-id game-wwe-2k-battlegrounds --icon-name wwe-2k-battlegrounds \
+    --cover "$A/cover.png" --wide "$A/wide.png" --hero "$A/hero.png" --logo "$A/logo.png" --icon "$A/icon.png"
+```
+By hand: AI-PROMPT section 8.2. Dock entry: [../config/applications/game-wwe-2k-battlegrounds.desktop](../config/applications/game-wwe-2k-battlegrounds.desktop).
+
+## Game settings
+
+| File in [settings/](settings/) | Goes to | Holds |
+|---|---|---|
+| `GameUserSettings.ini` | `~/.wine-games/drive_c/users/$USER/AppData/Local/WWEPlaygrounds/Saved/Config/WindowsNoEditor/GameUserSettings.ini` | 2560x1440, full screen (`FullscreenMode=1`), vsync on, every quality group at 3 (Epic), no frame limit |
+
+`./install.sh` puts it back when it is missing; `./install.sh --restore-settings`
+also over an existing one (backup first). The game's save is next to it in
+`Saved/SaveGames/WWE2KBATTLEGROUNDS.sav` and is not in this repo.
 
 ## Known problems and their fixes
 

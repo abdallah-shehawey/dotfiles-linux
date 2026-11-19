@@ -1,0 +1,9 @@
+{
+  "uuid": "panel-fixes@local",
+  "name": "Panel Fixes",
+  "description": "Workspace dots stay full size when Dash to Panel moves the Activities button while they animate, and new tray icons join the other tray icons.",
+  "shell-version": [
+    "51"
+  ],
+  "version": 1
+}

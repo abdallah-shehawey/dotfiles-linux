@@ -1,51 +1,285 @@
+diff --git a/crates/engine/src/agent.rs b/crates/engine/src/agent.rs
+index 58bd007..26eb3d7 100644
+--- a/crates/engine/src/agent.rs
++++ b/crates/engine/src/agent.rs
+@@ -424,6 +424,7 @@ const SAFE: &[&str] = &[
+     "ui.lightMessages",
+     "ui.language",
+     "ui.interfaceSize",
++    "ui.interfaceFont",
+     "ui.focusSearch",
+     "ui.advancedSearch",
+     "ui.sync",
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 0beeabe..230ebfe 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -768,6 +768,23 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
+             }
+         });
+     });
++    // Only where the desktop names a font that was found (GNOME's font-name, through fontconfig).
++    if let Some(family) = crate::theme::SystemFont::load().desktop_family().map(str::to_string) {
++        row(ui, tl!("Interface font"), |ui| {
++            let label = |f: crate::theme::InterfaceFont| match f {
++                crate::theme::InterfaceFont::MailCraft => tl!("MailCraft's own (Inter)").to_string(),
++                crate::theme::InterfaceFont::Desktop => format!("{} ({family})", tl!("The desktop's font")),
++            };
++            let cur = app.ui.interface_font;
++            egui::ComboBox::from_id_salt("opt_interface_font").selected_text(label(cur)).show_ui(ui, |ui| {
++                for f in crate::theme::InterfaceFont::ALL {
++                    if ui.selectable_label(f == cur, label(f)).clicked() {
++                        let _ = app.run("ui.interfaceFont", json!({"value": f.code()}));
++                    }
++                }
++            });
++        });
++    }
+     let prefs = app.session.prefs.clone();
+     let set = |app: &mut MailApp, params: serde_json::Value| {
+         let _ = app.run("file.options", params);
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 19a38fe..eb748ff 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -912,6 +912,8 @@ pub struct UiState {
+     pub swipe_right: swipe::Action,
+     /// Interface size in percent: scales the whole interface on top of the system's display scale.
+     pub interface_size: theme::InterfaceSize,
++    /// The font the window is drawn in: MailCraft's own or the desktop's ([`theme::InterfaceFont`]).
++    pub interface_font: theme::InterfaceFont,
+     /// Desktop: the main window's size and position, restored at the next launch.
+     pub window: Option<window_geometry::WindowGeometry>,
+     /// Desktop: the size and place each kind of window of its own last had (#286), for the next
+@@ -1042,6 +1044,7 @@ impl Default for UiState {
+             swipe_left: swipe::Action::None,
+             swipe_right: swipe::Action::None,
+             interface_size: theme::InterfaceSize::default(),
++            interface_font: theme::InterfaceFont::default(),
+             window: None,
+             window_places: Default::default(),
+             language: i18n::AUTO.into(),
+@@ -1153,6 +1156,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
+         r#"{"language": "auto"|"en"|"fr"|"de"|"es"|"it"|"nl"|"ro"|"hu"|"pl"|"cs"|"zh_CN"|"ka"|"pseudo"}"#,
+     ),
+     ("ui.interfaceSize", "Interface Size", "File › Options", r#"{"value": 80-200}"#),
++    ("ui.interfaceFont", "Interface Font", "File › Options", r#"{"value": "mailcraft"|"desktop"} — the window in MailCraft's own font, or in the desktop's interface font (Linux: GNOME's font-name)"#),
+     (
+         "ui.previewAttachment",
+         "Preview Attachment",
+@@ -1767,6 +1771,8 @@ pub struct MailApp {
+     /// What agents want that waits for the owner's yes ([`agent_gate`]).
+     pub(crate) asking: agent_gate::Questions,
+     styled: bool,
++    /// The interface font last installed in egui ([`theme::install_fonts_for`]).
++    fonts_for: Option<theme::InterfaceFont>,
+     /// The interface theme last installed in egui ([`theme::apply`]).
+     applied_theme: Option<(egui::ThemePreference, theme::ThemeChoice)>,
+     /// Whether animations play, and the system's answer as last asked ([`motion`], #1183).
+@@ -2037,6 +2043,7 @@ impl MailApp {
+             synthetic: Vec::new(),
+             asking: Default::default(),
+             styled: false,
++            fonts_for: None,
+             applied_theme: None,
+             motion: motion::Tracker::default(),
+             applied_language: None,
+@@ -2788,6 +2795,13 @@ impl MailApp {
+                 self.apply_language();
+                 Ok(json!({"language": self.ui.language, "inForce": self.language().code()}))
+             }
++            "ui.interfaceFont" => match p.get("value").and_then(Value::as_str).and_then(theme::InterfaceFont::from_code) {
++                Some(font) => {
++                    self.ui.interface_font = font;
++                    Ok(json!({"value": font.code(), "desktopFont": theme::SystemFont::load().desktop_family()}))
++                }
++                None => Err("`value` is \"mailcraft\" or \"desktop\"".into()),
++            },
+             "ui.interfaceSize" => match p.get("value").and_then(Value::as_f64).and_then(theme::InterfaceSize::from_percent) {
+                 Some(size) => {
+                     self.ui.interface_size = size;
+@@ -4986,8 +5000,11 @@ impl MailApp {
+                 self.dialog = Some(dialogs::Dialog::ImportPst(d));
+             }
+         }
++        if self.fonts_for != Some(self.ui.interface_font) {
++            theme::install_fonts_for(ctx, self.ui.interface_font);
++            self.fonts_for = Some(self.ui.interface_font);
++        }
+         if !self.styled {
+-            theme::install_fonts(ctx);
+             // Mod with -, = and 0 would also scale the whole window; interface size is in Options.
+             ctx.options_mut(|o| o.zoom_with_keyboard = false);
+             // egui closes the window on Mod+Q by itself; here that is Mark as Read. A Mac quits
+@@ -5009,6 +5026,7 @@ impl MailApp {
+             accent: self.ui.accent,
+             high_contrast: self.ui.high_contrast,
+             dark_style: self.ui.dark_style,
++            interface_font: self.ui.interface_font,
+         };
+         if self.applied_theme != Some((preference, choice)) {
+             theme::apply(ctx, preference, &choice);
 diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
-index fa6b6a0..e16089b 100644
+index fa6b6a0..27d648f 100644
 --- a/crates/ui-egui/src/theme.rs
 +++ b/crates/ui-egui/src/theme.rs
-@@ -757,7 +757,38 @@ impl SystemFont {
+@@ -86,6 +86,53 @@ impl From<Appearance> for String {
+     }
+ }
+ 
++/// The font the window is drawn in (File › Options › General, `ui.interfaceFont`): MailCraft's
++/// own Inter, as a new installation starts, or the desktop's interface font where the desktop
++/// names one (GNOME's `font-name`, found through fontconfig), drawn as lightly as the desktop
++/// draws it.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(from = "String", into = "String")]
++pub enum InterfaceFont {
++    #[default]
++    MailCraft,
++    Desktop,
++}
++
++impl InterfaceFont {
++    /// In menu order.
++    pub const ALL: [InterfaceFont; 2] = [InterfaceFont::MailCraft, InterfaceFont::Desktop];
++
++    /// The value used in `ui.json` and by the `ui.interfaceFont` command.
++    pub fn code(self) -> &'static str {
++        match self {
++            InterfaceFont::MailCraft => "mailcraft",
++            InterfaceFont::Desktop => "desktop",
++        }
++    }
++
++    pub fn from_code(code: &str) -> Option<InterfaceFont> {
++        InterfaceFont::ALL.into_iter().find(|f| f.code().eq_ignore_ascii_case(code.trim()))
++    }
++}
++
++impl From<String> for InterfaceFont {
++    fn from(s: String) -> Self {
++        InterfaceFont::from_code(&s).unwrap_or_default()
++    }
++}
++
++impl From<InterfaceFont> for String {
++    fn from(f: InterfaceFont) -> Self {
++        f.code().to_string()
++    }
++}
++
++/// How the desktop's font is drawn on the dark theme: the rasterizer's coverage as it is, as the
++/// light theme draws it. egui's dark default (2c - c², close to a gamma of 0.5) thickens white
++/// text: "Sent Items" in PoetsenOne carried 17% more ink per pixel of width than Pango and Cairo
++/// draw it on the desktop, and 0.6% less with the coverage as it is.
++const DESKTOP_DARK_TEXT: egui::epaint::FontColorTransferFunction = egui::epaint::FontColorTransferFunction::Off;
++
+ /// Interface size (File › Options › General, `ui.interfaceSize`), in percent: scales the ribbon,
+ /// menus, panes and dialogs on top of the display scale the system reports, through egui's zoom
+ /// factor.
+@@ -541,6 +588,8 @@ pub struct ThemeChoice {
+     pub high_contrast: bool,
+     /// The greys of the dark theme (#1384).
+     pub dark_style: DarkStyle,
++    /// The desktop's font, which is drawn lighter on the dark theme ([`InterfaceFont`]).
++    pub interface_font: InterfaceFont,
+ }
+ 
+ impl ThemeChoice {
+@@ -685,6 +734,19 @@ pub struct SystemFont {
+     /// The installed face of each font a message can be written in (#582), by font and whether
+     /// it is the bold face; read at start, a few hundred kilobytes each.
+     document: Vec<(Font, bool, Arc<FontData>)>,
++    /// The desktop's interface font, used when the owner picks it ([`InterfaceFont::Desktop`]).
++    desktop: Option<DesktopFont>,
++}
++
++/// The desktop's interface font as fontconfig finds it: its faces, and the face fontconfig gives
++/// its Arabic text.
++#[derive(Clone)]
++pub struct DesktopFont {
++    family: String,
++    regular: Arc<FontData>,
++    semibold: Option<Arc<FontData>>,
++    bold: Option<Arc<FontData>>,
++    arabic: Option<Arc<FontData>>,
+ }
+ 
+ /// The file names (lower case) the face of `font` may have on this system, best first: the
+@@ -757,7 +819,36 @@ impl SystemFont {
      #[cfg(all(not(windows), not(target_arch = "wasm32")))]
      fn read() -> Self {
          let dirs = font_dirs();
 -        SystemFont::none().with_fallbacks_from(&dirs, FALLBACK_FACES).with_emoji_from(&dirs, EMOJI_FACES).with_document_faces(&dirs)
++        #[cfg_attr(target_os = "macos", allow(unused_mut))]
++        let mut font = SystemFont::none().with_fallbacks_from(&dirs, FALLBACK_FACES).with_emoji_from(&dirs, EMOJI_FACES).with_document_faces(&dirs);
 +        #[cfg(not(target_os = "macos"))]
-+        let start = Self::from_desktop();
-+        #[cfg(target_os = "macos")]
-+        let start = SystemFont::none();
-+        start.with_fallbacks_from(&dirs, FALLBACK_FACES).with_emoji_from(&dirs, EMOJI_FACES).with_document_faces(&dirs)
++        {
++            font.desktop = DesktopFont::read();
++        }
++        font
 +    }
 +
-+    /// The desktop's own interface font (local patch): the family GNOME's
-+    /// `org.gnome.desktop.interface font-name` names, its faces as fontconfig finds them, and,
-+    /// first among the fallbacks, the face fontconfig gives that family's Arabic text. A family
-+    /// with no heavier face draws the heavier weights in its regular face, so the window keeps
-+    /// one font. Anything missing leaves the bundled Inter, as before.
++    /// The family of the desktop's interface font, when the desktop names one that was found.
++    pub fn desktop_family(&self) -> Option<&str> {
++        self.desktop.as_ref().map(|d| d.family.as_str())
++    }
++
++    /// This system's fonts as the window draws with `choice`: the desktop's faces in front of the
++    /// bundled ones and its Arabic face first among the fallbacks, or as they are.
++    pub fn for_interface(&self, choice: InterfaceFont) -> SystemFont {
++        let mut font = self.clone();
++        if choice != InterfaceFont::Desktop || font.regular.is_some() {
++            return font;
++        }
++        let Some(desktop) = font.desktop.clone() else { return font };
++        font.regular = Some(desktop.regular.clone());
++        // A family of one weight draws the heavier weights in it too: the window keeps one font.
++        font.semibold = desktop.semibold.clone().or_else(|| Some(desktop.regular.clone()));
++        font.bold = desktop.bold.clone();
++        if let Some(arabic) = desktop.arabic {
++            font.fallbacks.insert(0, arabic);
++        }
++        font
+     }
+ 
+     #[cfg(target_arch = "wasm32")]
+@@ -862,6 +953,7 @@ impl SystemFont {
+                 fallbacks: Vec::new(),
+                 emoji: None,
+                 document: Vec::new(),
++                desktop: None,
+             },
+             None => SystemFont::none(),
+         }
+@@ -873,6 +965,80 @@ impl SystemFont {
+     }
+ }
+ 
++impl DesktopFont {
++    /// The family GNOME's `org.gnome.desktop.interface font-name` names, its faces as fontconfig
++    /// finds them, and the first face of fontconfig's list for that family's Arabic text that has
++    /// Arabic. `None` without the family or its regular face.
 +    #[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
-+    fn from_desktop() -> Self {
-+        let Some(family) = desktop_family() else { return SystemFont::none() };
++    fn read() -> Option<DesktopFont> {
++        let family = desktop_family()?;
 +        let escaped = fc_escape(&family);
 +        let face = |pattern: &str| -> Option<(std::path::PathBuf, Arc<FontData>)> {
 +            let path = fc_match_file(pattern, &family)?;
 +            let bytes = read_font(&path, SYSTEM_FONT_CAP)?;
 +            Some((path, Arc::new(FontData::from_owned(bytes))))
 +        };
-+        let Some((regular_path, regular)) = face(&escaped) else { return SystemFont::none() };
++        let (regular_path, regular) = face(&escaped)?;
 +        let heavier = |weight: &str| face(&format!("{escaped}:weight={weight}")).filter(|(path, _)| *path != regular_path).map(|(_, data)| data);
-+        let semibold = heavier("semibold").or_else(|| Some(regular.clone()));
++        let semibold = heavier("semibold");
 +        let bold = heavier("bold");
-+        let mut fallbacks = Vec::new();
-+        if let Some(path) = fc_script_file(&format!("{escaped}:lang=ar"), "ar") {
-+            if let Some(bytes) = read_font(&path, FALLBACK_FONT_CAP) {
-+                fallbacks.push(Arc::new(FontData::from_owned(bytes)));
-+            }
-+        }
-+        SystemFont { regular: Some(regular), semibold, bold, fallbacks, emoji: None, document: Vec::new() }
-     }
- 
-     #[cfg(target_arch = "wasm32")]
-@@ -873,6 +904,56 @@ impl SystemFont {
-     }
- }
- 
++        let arabic = fc_script_file(&format!("{escaped}:lang=ar"), "ar")
++            .and_then(|path| read_font(&path, FALLBACK_FONT_CAP))
++            .map(|bytes| Arc::new(FontData::from_owned(bytes)));
++        Some(DesktopFont { family, regular, semibold, bold, arabic })
++    }
++}
++
 +/// What `program` prints, when it runs and succeeds.
 +#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
 +fn command_output(program: &str, args: &[&str]) -> Option<String> {
@@ -99,3 +333,40 @@ index fa6b6a0..e16089b 100644
  /// Where this system keeps its fonts: the owner's own folders first, then the system's.
  #[cfg(all(not(windows), not(target_arch = "wasm32")))]
  pub(crate) fn font_dirs() -> Vec<std::path::PathBuf> {
+@@ -1088,6 +1254,11 @@ pub fn install_fonts(ctx: &egui::Context) {
+     install_fonts_with(ctx, &SystemFont::load());
+ }
+ 
++/// [`install_fonts`] with the interface font the owner picked ([`InterfaceFont`]).
++pub fn install_fonts_for(ctx: &egui::Context, choice: InterfaceFont) {
++    install_fonts_with(ctx, &SystemFont::load().for_interface(choice));
++}
++
+ /// [`install_fonts`] with a system font of the caller's choosing ([`SystemFont::none`] draws the
+ /// interface in MailCraft's own fonts).
+ pub fn install_fonts_with(ctx: &egui::Context, system: &SystemFont) {
+@@ -1331,8 +1502,9 @@ pub fn main_system_theme(ctx: &egui::Context) -> Option<egui::Theme> {
+ pub fn apply(ctx: &egui::Context, preference: egui::ThemePreference, choice: &ThemeChoice) {
+     let palette = choice.palette();
+     ctx.data_mut(|d| d.insert_temp(Palette::slot(), palette));
+-    ctx.set_visuals_of(egui::Theme::Light, visuals(&palette.light));
+-    ctx.set_visuals_of(egui::Theme::Dark, visuals(&palette.dark));
++    let desktop_text = choice.interface_font == InterfaceFont::Desktop && SystemFont::load().desktop_family().is_some();
++    ctx.set_visuals_of(egui::Theme::Light, visuals(&palette.light, desktop_text));
++    ctx.set_visuals_of(egui::Theme::Dark, visuals(&palette.dark, desktop_text));
+     ctx.all_styles_mut(|s| {
+         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
+         s.spacing.button_padding = egui::vec2(8.0, 3.0);
+@@ -1352,8 +1524,11 @@ pub fn apply(ctx: &egui::Context, preference: egui::ThemePreference, choice: &Th
+ }
+ 
+ /// egui's visuals for one of our palettes.
+-fn visuals(t: &Tokens) -> Visuals {
++fn visuals(t: &Tokens, desktop_text: bool) -> Visuals {
+     let mut v = if t.dark { Visuals::dark() } else { Visuals::light() };
++    if desktop_text && t.dark {
++        v.text_options.color_transfer_function = DESKTOP_DARK_TEXT;
++    }
+     v.panel_fill = t.ribbon;
+     v.window_fill = t.menu;
+     v.extreme_bg_color = t.input;

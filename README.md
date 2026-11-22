@@ -23,6 +23,9 @@ dotfiles-linux/
 ├── zen/                # Zen Browser
 │   └── horizontal-tabs/  # tabs on the address-bar row (userChrome.css + user.js)
 │
+├── apps/               # Patched builds of desktop apps
+│   └── mailcraft/      # MailCraft in the desktop's own font (patch + install.sh)
+│
 ├── games/              # Windows games under Wine from Steam, written as AI instructions
 │   ├── AI-PROMPT.md    # the main step-by-step prompt
 │   ├── common/         # launchers, controller tools, fixes

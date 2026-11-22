@@ -1,0 +1,101 @@
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index fa6b6a0..e16089b 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -757,7 +757,38 @@ impl SystemFont {
+     #[cfg(all(not(windows), not(target_arch = "wasm32")))]
+     fn read() -> Self {
+         let dirs = font_dirs();
+-        SystemFont::none().with_fallbacks_from(&dirs, FALLBACK_FACES).with_emoji_from(&dirs, EMOJI_FACES).with_document_faces(&dirs)
++        #[cfg(not(target_os = "macos"))]
++        let start = Self::from_desktop();
++        #[cfg(target_os = "macos")]
++        let start = SystemFont::none();
++        start.with_fallbacks_from(&dirs, FALLBACK_FACES).with_emoji_from(&dirs, EMOJI_FACES).with_document_faces(&dirs)
++    }
++
++    /// The desktop's own interface font (local patch): the family GNOME's
++    /// `org.gnome.desktop.interface font-name` names, its faces as fontconfig finds them, and,
++    /// first among the fallbacks, the face fontconfig gives that family's Arabic text. A family
++    /// with no heavier face draws the heavier weights in its regular face, so the window keeps
++    /// one font. Anything missing leaves the bundled Inter, as before.
++    #[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++    fn from_desktop() -> Self {
++        let Some(family) = desktop_family() else { return SystemFont::none() };
++        let escaped = fc_escape(&family);
++        let face = |pattern: &str| -> Option<(std::path::PathBuf, Arc<FontData>)> {
++            let path = fc_match_file(pattern, &family)?;
++            let bytes = read_font(&path, SYSTEM_FONT_CAP)?;
++            Some((path, Arc::new(FontData::from_owned(bytes))))
++        };
++        let Some((regular_path, regular)) = face(&escaped) else { return SystemFont::none() };
++        let heavier = |weight: &str| face(&format!("{escaped}:weight={weight}")).filter(|(path, _)| *path != regular_path).map(|(_, data)| data);
++        let semibold = heavier("semibold").or_else(|| Some(regular.clone()));
++        let bold = heavier("bold");
++        let mut fallbacks = Vec::new();
++        if let Some(path) = fc_script_file(&format!("{escaped}:lang=ar"), "ar") {
++            if let Some(bytes) = read_font(&path, FALLBACK_FONT_CAP) {
++                fallbacks.push(Arc::new(FontData::from_owned(bytes)));
++            }
++        }
++        SystemFont { regular: Some(regular), semibold, bold, fallbacks, emoji: None, document: Vec::new() }
+     }
+ 
+     #[cfg(target_arch = "wasm32")]
+@@ -873,6 +904,56 @@ impl SystemFont {
+     }
+ }
+ 
++/// What `program` prints, when it runs and succeeds.
++#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++fn command_output(program: &str, args: &[&str]) -> Option<String> {
++    let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
++    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
++}
++
++/// The family of the desktop's interface font, from GNOME's setting ("'PoetsenOne 10'"), without
++/// its size or font variations.
++#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++fn desktop_family() -> Option<String> {
++    let raw = command_output("gsettings", &["get", "org.gnome.desktop.interface", "font-name"])?;
++    let name = raw.trim().trim_matches('\'');
++    let name = name.split(" @").next().unwrap_or(name).trim();
++    let name = match name.rsplit_once(' ') {
++        Some((family, size)) if size.parse::<f32>().is_ok() => family,
++        _ => name,
++    };
++    let name = name.trim().trim_end_matches(',').trim();
++    (!name.is_empty()).then(|| name.to_string())
++}
++
++/// `family` written so that fontconfig reads it as one family name.
++#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++fn fc_escape(family: &str) -> String {
++    let mut out = String::with_capacity(family.len());
++    for ch in family.chars() {
++        if matches!(ch, '\\' | '-' | ':' | ',') {
++            out.push('\\');
++        }
++        out.push(ch);
++    }
++    out
++}
++
++/// The file fontconfig picks for `pattern`, when the face it picks is of `family`.
++#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++fn fc_match_file(pattern: &str, family: &str) -> Option<std::path::PathBuf> {
++    let out = command_output("fc-match", &["-f", "%{family}\n%{file}", pattern])?;
++    let (families, file) = out.split_once('\n')?;
++    families.split(',').any(|f| f.trim().eq_ignore_ascii_case(family)).then(|| std::path::PathBuf::from(file.trim()))
++}
++
++/// The first face in fontconfig's fallback list for `pattern` that covers the language `lang`.
++#[cfg(all(not(windows), not(target_os = "macos"), not(target_arch = "wasm32")))]
++fn fc_script_file(pattern: &str, lang: &str) -> Option<std::path::PathBuf> {
++    let out = command_output("fc-match", &["-s", "-f", "%{lang}\t%{file}\n", pattern])?;
++    out.lines().filter_map(|line| line.split_once('\t')).find(|(langs, _)| langs.split('|').any(|l| l == lang)).map(|(_, file)| std::path::PathBuf::from(file.trim()))
++}
++
+ /// Where this system keeps its fonts: the owner's own folders first, then the system's.
+ #[cfg(all(not(windows), not(target_arch = "wasm32")))]
+ pub(crate) fn font_dirs() -> Vec<std::path::PathBuf> {
